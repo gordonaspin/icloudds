@@ -7,7 +7,7 @@ RUN set -xe \
   && python -m ensurepip \
   && pip install --upgrade pip setuptools \
   && pip install wheel==0.35.1 \
-  && pip install git+https://github.com/gordonaspin/icloudds.git \
+  && pip install git+https://github.com/gordonaspin/icloudds.git --force-reinstall\
   && pip list \
   && icloud -h \
   && icloudds -h 
