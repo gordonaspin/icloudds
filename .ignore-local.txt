@@ -1,0 +1,6 @@
+# regex patterns to ignore, one per line
+# built-in ignore patterns are:
+# .*\.com-apple-bird.*
+# .*\.DS_Store
+.*\.swp
+scripts/iTermHere\.app
