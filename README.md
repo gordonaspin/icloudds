@@ -82,6 +82,8 @@ Options:
   --ignore-local <filename>       Ignore Local files/folders filename
   --include-icloud <filename>     Include iCloud Drive files/folders filename
   --include-local <filename>      Include Local files/folders filename
+  --logging-config <filename>     JSON logging config filename (default:
+                                  logging-config.json)
   --retry-period <seconds>        Period in seconds to retry failed events
                                   [x>=5]
   --icloud-check-period <seconds>
