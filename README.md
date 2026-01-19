@@ -152,7 +152,6 @@ docker run -it --name icloudds \
     -v $(pwd)/cookies:/cookies \
     gordonaspin/icloudds:latest \
     --username testuser@example.com \
-    --sync
 ```
 
 On Windows:
@@ -163,8 +162,7 @@ On Windows:
 Building docker image from this repo and gordonaspin/pyicloud repo image locally:
 
 ```bash
-docker build --tag your-repo/icloudds:latest --progress=plain -f ./Dockerfile.from_repo
-docker build --tag your-repo/icloudds:latest --progress=plain -f ./Dockerfile.local
+docker build --tag your-repo/icloudds:latest --progress=plain -f ./Dockerfile
 
 # the pyicloud icloud command line utility
 # this will optionally create a python keyring in the container for future use, cookies will go to a tmp folder in the container
@@ -174,6 +172,11 @@ docker exec -it icloudds icloud --username apple_id@mail.com
 docker exec -it icloudds icloudds -h
 
 # start the container with mounts for the Drive folder and cookie storage:
-docker run -it --name icloudds -v ~/iCloud\ Drive:/drive -v ~/.pyicloud:/cookies your-repo/icloudds -u username@email.com --sync
+docker run -it --name icloudds -v ~/iCloud\ Drive:/drive -v ~/.pyicloud:/cookies your-repo/icloudds -u username@email.com
 
+```
+
+The container has the default .ignore*, .include* and logging-config.json files in the home folder of the docker user and these are used by default. To override this you can either build your own container with the contents changed, or you can specify the --include and --ignore command line arguments that refer to a path you mount to the container. e.g.:
+```bash
+docker run -it --name icloudds -v ~/iCloud\ Drive:/drive -v ~/.pyicloud:/cookies your-repo/icloudds -v ~/.config:/cfg -u username@email.com --ignore-icloud /cfg/<filename> --ignore-local /cfg/<filename> --include-icloud /cfg/<filename> --include-local /cfg/<filename>
 ```

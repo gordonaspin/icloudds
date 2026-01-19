@@ -23,6 +23,7 @@ CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
 @click.option("--ignore-local",         help="Ignore Local files/folders filename", type=click.Path(exists=False), metavar="<filename>", default=".ignore-local.txt")
 @click.option("--include-icloud",       help="Include iCloud Drive files/folders filename", type=click.Path(exists=False), metavar="<filename>", default=".include-icloud.txt")
 @click.option("--include-local",        help="Include Local files/folders filename", type=click.Path(exists=False), metavar="<filename>", default=".include-icloud.txt")
+@click.option("--logging-config",       help="JSON logging config filename (default: logging-config.json)", metavar="<filename>", default="logging-config.json")
 @click.option("--retry-period",         help="Period in seconds to retry failed events", type=click.IntRange(min=constants.RETRY_SECONDS), metavar="<seconds>", default=constants.RETRY_SECONDS)
 @click.option("--icloud-check-period",  help="Period in seconds to look for iCloud changes", type=click.IntRange(min=constants.ICLOUD_CHECK_SECONDS), metavar="<seconds>", default=constants.ICLOUD_CHECK_SECONDS)
 @click.option("--icloud-refresh-period", help="Period in seconds to perform full iCloud refresh", type=click.IntRange(min=constants.ICLOUD_REFRESH_SECONDS), metavar="<seconds>", default=constants.ICLOUD_REFRESH_SECONDS)
@@ -30,11 +31,25 @@ CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
 
 def main(directory: str, username: str, password: str, cookie_directory: str,
          ignore_icloud: str, ignore_local: str,
-         include_icloud: str, include_local: str,
+         include_icloud: str, include_local: str, logging_config: str,
          retry_period: int, icloud_check_period: int, icloud_refresh_period: int
          ):
 
-    setup_logging()
+    context = Context(directory=directory,
+                      username=username,
+                      password=password,
+                      cookie_directory=cookie_directory,
+                      ignore_local=ignore_local,
+                      ignore_icloud=ignore_icloud,
+                      include_local=include_local,
+                      include_icloud=include_icloud,
+                      logging_config=logging_config,
+                      retry_period=timedelta(seconds=retry_period),
+                      icloud_check_period=timedelta(seconds=icloud_check_period),
+                      icloud_refresh_period=timedelta(seconds=icloud_refresh_period))
+    
+    setup_logging(context)
+
     if password is not None:
         KeywordFilter.add_keyword(password)
 
@@ -52,18 +67,6 @@ def main(directory: str, username: str, password: str, cookie_directory: str,
     ignore_local   = [line.strip() for line in open(ignore_local).readlines()   if not line.startswith('#')] if ignore_local and os.path.isfile(ignore_local) else []
     include_icloud = [line.strip() for line in open(include_icloud).readlines() if not line.startswith('#')] if include_icloud and os.path.isfile(include_icloud) else []
     include_local  = [line.strip() for line in open(include_local).readlines()  if not line.startswith('#')] if include_local and os.path.isfile(include_local) else []
-
-    context = Context(directory=directory,
-                      username=username,
-                      password=password,
-                      cookie_directory=cookie_directory,
-                      ignore_local=ignore_local,
-                      ignore_icloud=ignore_icloud,
-                      include_local=include_local,
-                      include_icloud=include_icloud,
-                      retry_period=timedelta(seconds=retry_period),
-                      icloud_check_period=timedelta(seconds=icloud_check_period),
-                      icloud_refresh_period=timedelta(seconds=icloud_refresh_period))
     
     event_handler = EventHandler(ctx=context)
     observer = Observer()

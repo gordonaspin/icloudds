@@ -11,6 +11,7 @@ class Context:
     ignore_icloud: list[str]
     include_local: list[str]
     include_icloud: list[str]
+    logging_config: str
     retry_period: timedelta
     icloud_check_period: timedelta
     icloud_refresh_period: timedelta

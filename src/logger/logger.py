@@ -4,12 +4,20 @@ import json
 import logging
 import logging.config
 import pathlib
+import sys
 from typing import override
+from context import Context
+import constants as constants
 
-def setup_logging(logging_config="logging-config.json") -> None:
-    config_file = pathlib.Path(logging_config)
-    with open(config_file) as f_in:
-        config = json.load(f_in)
+def setup_logging(ctx: Context) -> None:
+    config_file = pathlib.Path(ctx.logging_config)
+    try:
+        with open(config_file) as f_in:
+            config = json.load(f_in)
+    except FileNotFoundError as e:
+        print(f"Logging config file {config_file} not found")
+        sys.exit(constants.ExitCode.EXIT_CLICK_USAGE.value)
+
 
     logging.config.dictConfig(config)
     queue_handler = logging.getHandlerByName("queue_handler")
