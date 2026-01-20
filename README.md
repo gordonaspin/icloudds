@@ -81,7 +81,7 @@ In the snippet below, "name" is a path name to a file relative from the --direct
 # Clone, Install dependencies, Build, Install and Run
 `icloudds` depends on a forked version of python pyicloud library implementation pyicloud @ git+https://github.com/timlaing/pyicloud.git. This forked implementation has added features to properly set timestamps of objects uploaded to iCloud Drive and it resolves a retrieval limit of 200 albums (in Photos). This implementation includes features I added to my fork of pyicloud, which is no longer needed. Do not use the `pyicloud` Python package that can be installed using `pip`, it is old and does not have the required features.
 
-To build `icloudds`, you need Python, a few dependencies, and a virtual environment if you wish. I use pyenv and .venv:
+To build `icloudds`, you need Python, a few dependencies, and a virtual environment if you wish. I use pyenv and virtualenv:
 
 ### Clone
 To clone the repo:
@@ -89,19 +89,19 @@ To clone the repo:
 $ git clone https://github.com/gordonaspin/icloudds.git
 ```
 You can now install dependencies, and run from source
-```
+``` sh
 $ cd icloudds
 $ pip install -r requirements.txt
 $ python src/icloudds.py -h
 ``` 
-### Build wheel, install and run
+### Build wheel, install and run using pyenv, virtualenv and build
 ``` sh
 $ git clone https://github.com/gordonaspin/icloudds.git
 $ cd icloudds
-$ pyenv local 3.14.2            #optional if using pyenv and virtual environments
-$ python -m venv .venv          #optional if using virtual environments
-$ source .venv/bin/activate     #optional if using virtual environments
-$ pip install -r requirements.txt
+$ pyenv local 3.14.2                #optional if using pyenv and virtual environments
+$ python -m venv .venv              #optional if using virtual environments
+$ source .venv/bin/activate         #optional if using virtual environments
+$ pip install -r requirements.txt   #optional, as installing the wheel below will install dependencies also
 $ python -m build
 $ pip install dist/*.whl
 $ icloudds -h
@@ -110,7 +110,7 @@ $ icloudds -h
 ``` sh
 $ pip install git+https://github.com/timlaing/pyicloud.git@673c1aa
 ```
-or, to install the latest version, build and install:
+or, to install the latest version of pyicloud, build and install:
 ``` sh
 $ git clone https://github.com/timlaing/pyicloud.git
 $ cd pyicloud
@@ -121,14 +121,13 @@ $ pip install dist/*.whl
 
 [//]: # (This is now only a copy&paste from --help output)
 
-``` plain
+``` sh
 $ python icloudds.py -h
 ```
 or, if you build and install the wheel from the dist/ folder
-```
+``` sh
 $ icloudds -h
-```
-```
+
 Usage: icloudds <options>
 
 Options:
@@ -161,10 +160,7 @@ Options:
 Example:
 
 ``` sh
-icloudds --directory ./Drive \
---username testuser@example.com \
---password pass1234 \
---directory Drive/ \
+icloudds --directory ./Drive --username testuser@example.com --password pass1234 
 ```
 
 ## Requirements
@@ -177,7 +173,7 @@ icloudds --directory ./Drive \
 
 ## Authentication
 
-If your Apple account has two-factor authentication enabled, you will be prompted for a code when you run the script.
+If your Apple account has two-factor authentication enabled, you will be prompted for a code when you run `icloudds`
 
 Two-factor authentication will expire after an interval set by Apple, at which point you will have to re-authenticate. This interval is currently two months.
 
@@ -198,16 +194,16 @@ If you are still seeing this message after 30 minutes, then please [open an issu
 ## Docker
 
 This script is available in a Docker image:
-```bash
+``` sh
 docker pull gordonaspin/icloudds:latest
 ```
 The image defines an entrypoint:
-```bash
+``` sh
 ENTRYPOINT [ "icloudds", "-d", "/drive", "--cookie-directory", "/cookies" ]
 ```
 Usage:
 
-```bash
+``` sh
 # Downloads all iCloud Drive items to ./Drive
 
 docker pull gordonaspin/icloudds:latest
@@ -225,7 +221,7 @@ On Windows:
 
 Building docker image from this repo and gordonaspin/pyicloud repo image locally:
 
-```bash
+``` sh
 docker build --tag your-repo/icloudds:latest --progress=plain -f ./Dockerfile
 
 # the pyicloud icloud command line utility
@@ -240,7 +236,20 @@ docker run -it --name icloudds -v ~/iCloud\ Drive:/drive -v ~/.pyicloud:/cookies
 
 ```
 
-The container has the default .ignore*, .include* and logging-config.json files in the home folder of the docker user and these are used by default. To override this you can either build your own container with the contents changed, or you can specify the --include and --ignore command line arguments that refer to a path you mount to the container. e.g.:
-```bash
+The container has the default .ignore*, .include* and logging-config.json files in the home folder of the docker user and these are used by default. To change this you can edit the files in the container in /home/docker, or override permamently you can build your own container with the contents changed, or you can specify the --include and --ignore command line arguments that refer to a path you mount to the container. e.g.:
+``` sh
 docker run -it --name icloudds -v ~/iCloud\ Drive:/drive -v ~/.pyicloud:/cookies your-repo/icloudds -v ~/.config:/cfg -u username@email.com --ignore-icloud /cfg/<filename> --ignore-local /cfg/<filename> --include-icloud /cfg/<filename> --include-local /cfg/<filename>
 ```
+The container as-built has verbose DEBUG logging to file enabled, but the log files are inside the container. These are accessible for example like so:
+``` sh
+$ docker exec -it icloudds /bin/bash -c "tail -F icloudds.log"
+```
+You can modify the logging-config.json by editing it inside the container like so:
+``` sh
+$ docker exec -it icloudds /bin/bash -c "vi logging-config.json"
+```
+Using this approach is easy, but will not persist if you delete the container. An example of moving the include/exclude files and logging-config.json to outside the container would look something like this:
+``` sh
+docker run -it --name icloudds -v ~/iCloud\ Drive:/drive -v ~/.pyicloud:/cookies your-repo/icloudds -v ~/.config:/cfg -u username@email.com --ignore-icloud /cfg/<filename> --ignore-local /cfg/<filename> --include-icloud /cfg/<filename> --include-local /cfg/<filename> --logging-config /cfg/logging-config.json
+```
+In the example above, you would have your ignore files, include files and logging-config.json files in your `~/.config` folder and refer to them on the command line as `/cfg/filename`
