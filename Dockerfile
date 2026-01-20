@@ -1,34 +1,45 @@
 FROM python:3.14-alpine AS base
 
-FROM base AS builder
+# Install some useful utilities in image
+RUN apk add tzdata bash vim git
+RUN python -m pip install --upgrade pip
+RUN pip install --upgrade setuptools
+RUN pip install --upgrade build
 
-RUN set -xe \
-  && apk add tzdata bash vim git \
-  && python -m ensurepip \
-  && pip install --upgrade pip setuptools \
-  && pip install wheel==0.35.1 \
-  && pip install git+https://github.com/gordonaspin/icloudds.git --force-reinstall\
-  && pip list \
-  && icloud -h \
-  && icloudds -h 
-
+# Set TZ to East Coast
 ARG TZ="America/New_York"
 RUN cp /usr/share/zoneinfo/$TZ /etc/localtime
-ENV TZ=${TZ}
 
+# Work in tmp, pull the repo and build it here
+WORKDIR /tmp
+RUN git clone https://github.com/gordonaspin/icloudds.git
+WORKDIR /tmp/icloudds
+RUN python -m build
+
+# Install the wheel, check commands work
+RUN pip install dist/*.whl
+RUN pip list -v
+RUN icloud -h
+RUN icloudds -h
+
+# Add the docker user
 ARG GROUP_NAME=docker
 ARG USER_NAME=docker
 ARG USER_UID=1000
 ARG GROUP_GID=1000
-
 # Create a group and a user, then add the user to the group
 RUN addgroup -g ${GROUP_GID} -S ${GROUP_NAME} && \
     adduser -u ${USER_UID} -S -G ${GROUP_NAME} -D -H ${USER_NAME}
-USER docker
 
+# docker home, copy base config files and chown them to docker
 WORKDIR /home/docker
-COPY --chown=docker:docker .ignore*.txt .
-COPY --chown=docker:docker .include*.txt .
-COPY --chown=docker:docker logging-config.json .
+RUN cp /tmp/icloudds/.*.txt .
+RUN cp /tmp/icloudds/logging-config.json .
+RUN chown -R docker:docker *
+RUN chown -R docker:docker .*
+RUN rm -rf /tmp/icloudds
 
+# Set the TZ, change user to docker, define entrypoint
+ENV TZ=${TZ}
+USER docker
 ENTRYPOINT [ "icloudds", "-d", "/drive", "--cookie-directory", "/cookies" ]
