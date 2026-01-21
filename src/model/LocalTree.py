@@ -14,10 +14,7 @@ class LocalTree(BaseTree):
         local_root = local_root if ctx.directory.endswith(os.sep) else ctx.directory + os.sep
         local_root = ctx.directory
         super().__init__(root_path=local_root, ignores=self.ctx.ignore_local, includes=self.ctx.include_icloud)
-        for s in self.ignores_patterns:
-            logger.info(f"ignore local: {s}")
-        for s in self.includes_patterns:
-            logger.info(f"include local: {s}")
+
     @override
     def refresh(self):
         logger.debug(f"Refreshing Local Drive {self._root_path}...")
