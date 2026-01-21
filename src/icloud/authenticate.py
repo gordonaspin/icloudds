@@ -26,12 +26,6 @@ def authenticate(
     failure_count = 0
     while True:
         try:
-            logger.debug(f"username: {username}")
-            logger.debug(f"password: {password}")
-            logger.debug(f"cookie_directory: {cookie_directory}")
-            logger.debug(f"client_id: {client_id}")
-            logger.debug(f"raise_authorization_exception: {raise_authorization_exception}")
-            logger.debug(f"unverified_https: {unverified_https}")
             api = pyicloud.PyiCloudService(
                 username,
                 password,
