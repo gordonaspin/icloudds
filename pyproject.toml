@@ -10,7 +10,7 @@ dependencies = [
 ]
 requires-python = ">=3.14.2"
 readme = "README.md"
-license = { text = "MIT" }
+license = "MIT"
 maintainers = [{ name = "Gordon Aspin", email="gordon.aspin@gmail.com" }]
 classifiers=[
         "Intended Audience :: Developers",
