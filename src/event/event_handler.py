@@ -89,14 +89,14 @@ class EventHandler(RegexMatchingEventHandler):
                     refresh_dt = datetime.now() 
                     result = refresh_future.result()
                     if result:
-                        logger.info(f"Background refresh complete")
+                        logger.debug(f"Background refresh complete")
                         self._apply_icloud_refresh(refresh)
                         self._icloud = refresh
                         root_has_changed = trash_has_changed = False
                         icloud_refresh_period = self.ctx.icloud_refresh_period
                     else:
                         icloud_refresh_period = min(self.ctx.icloud_refresh_period * 12, icloud_refresh_period * 2)
-                        logger.warning(f"Background refresh was inconsisent, will retry in {icloud_refresh_period}")
+                        logger.debug(f"Background refresh was inconsisent, will retry in {icloud_refresh_period}")
                     refresh_future = None
 
                 if datetime.now() - refresh_dt > icloud_check_period:
@@ -112,11 +112,11 @@ class EventHandler(RegexMatchingEventHandler):
                     trash_has_changed = trash_changed_future.result()
                     if refresh_future is None and (datetime.now() - refresh_dt > icloud_refresh_period or root_has_changed or trash_has_changed):
                         if datetime.now() - refresh_dt > icloud_refresh_period:
-                            logger.info("refresh period elapsed")
+                            logger.debug("refresh period elapsed")
                         if root_has_changed:
-                            logger.info(f"root has changed")
+                            logger.debug(f"root has changed")
                         if trash_has_changed:
-                            logger.info("trash has changed")
+                            logger.debug("trash has changed")
                         refresh = iCloudTree(ctx=self.ctx)
                         refresh_future = self._threadpool.submit(refresh.refresh)
 

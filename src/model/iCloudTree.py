@@ -29,7 +29,10 @@ class iCloudTree(BaseTree):
         self._lock = Lock()
         self._trashlock = Lock()
         super().__init__(root_path=ctx.directory, ignores=ctx.ignore_icloud, includes=ctx.include_icloud)
-
+        for s in self.ignores_patterns:
+            logger.info(f"ignore icloud: {s}")
+        for s in self.includes_patterns:
+            logger.info(f"include icloud: {s}")
     def authenticate(self) -> None:
         if self._is_authenticated:
             return
@@ -42,7 +45,7 @@ class iCloudTree(BaseTree):
         succeeded = True
         try:
             self.authenticate()
-            logger.info(f"Refreshing iCloud Drive {self.ctx.username}::{self.drive.service_root}...")
+            logger.debug(f"Refreshing iCloud Drive {self.ctx.username}::{self.drive.service_root}...")
             with ThreadPoolExecutor(os.cpu_count()*4) as executor:
                 pending = set()
                 for (root, name) in [(self._root, "root"), (self._trash, "trash")]:

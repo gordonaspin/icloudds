@@ -1,4 +1,5 @@
 import os
+import inspect
 import click
 from click import version_option
 import logging
@@ -6,12 +7,14 @@ from dataclasses import dataclass
 from datetime import timedelta
 from logger.logger import setup_logging, KeywordFilter
 from watchdog.observers import Observer
+import importlib.metadata
 
 import constants
 from context import Context
 from event.event_handler import EventHandler
 
-logger = logging.getLogger("icloudds")  # __name__ is a common choice
+name = "icloudds"
+logger = logging.getLogger(name)  # __name__ is a common choice
 
 CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
 @click.command(context_settings=CONTEXT_SETTINGS, options_metavar="<options>", no_args_is_help=True)
@@ -54,6 +57,7 @@ def main(directory: str, username: str, password: str, cookie_directory: str,
                       icloud_refresh_period=timedelta(seconds=icloud_refresh_period))
     
     setup_logging(context)
+    logger.info(f"{name} {importlib.metadata.version("icloudds")}")
 
     if password is not None:
         KeywordFilter.add_keyword(password)

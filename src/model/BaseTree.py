@@ -52,7 +52,7 @@ class BaseTree():
     
     @property
     def includes_patterns(self) -> list[str]:
-        return self.includes_patterns
+        return self._includes_patterns
     
     def refresh(self) -> None:
         raise NotImplementedError("Subclasses should implement this method")
