@@ -12,6 +12,7 @@ RUN cp /usr/share/zoneinfo/$TZ /etc/localtime
 
 # Work in tmp, pull the repo and build it here
 WORKDIR /tmp
+ARG CACHE_BUST
 RUN git clone https://github.com/gordonaspin/icloudds.git
 WORKDIR /tmp/icloudds
 RUN python -m build
