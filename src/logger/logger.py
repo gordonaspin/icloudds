@@ -1,3 +1,4 @@
+import os
 import atexit
 import datetime as dt
 import json
@@ -18,6 +19,12 @@ def setup_logging(ctx: Context) -> None:
         print(f"Logging config file {config_file} not found")
         sys.exit(constants.ExitCode.EXIT_CLICK_USAGE.value)
 
+    for _, handler in config['handlers'].items():
+        file = handler.get('filename', None)
+        if file:
+            folder_path = os.path.normpath(os.path.dirname(file))
+            os.makedirs(folder_path, exist_ok=True)
+        pass    
 
     logging.config.dictConfig(config)
     queue_handler = logging.getHandlerByName("queue_handler")

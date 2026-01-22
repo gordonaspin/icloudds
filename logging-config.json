@@ -33,7 +33,7 @@
       "class": "logging.handlers.RotatingFileHandler",
       "level": "DEBUG",
       "formatter": "thread detailed",
-      "filename": "icloudds.log",
+      "filename": "./log/icloudds.log",
       "maxBytes": 10000000,
       "backupCount": 3,
       "filters": ["KeywordFilter"]

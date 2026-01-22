@@ -197,6 +197,8 @@ class EventHandler(RegexMatchingEventHandler):
                 self._handle_file_modified(FileModifiedEvent(src_path=path))
 
     def _sync_icloud(self, these: LocalTree | iCloudTree, those: iCloudTree) -> None:
+        left = "Local" if isinstance(these, LocalTree) else "iCloud"
+        right = "Refresh" if left == "iCloud" else "iCloud"
         in_icloud = those.root.keys() - these.root.keys()
         for path in in_icloud:
             if self._local.ignore(path, isinstance(those.root[path], iCloudFolderInfo)):
@@ -206,16 +208,18 @@ class EventHandler(RegexMatchingEventHandler):
             try:
                 if isinstance(cfi, iCloudFolderInfo):
                     if not os.path.exists(os.path.join(self._local.root_path, path)):
-                        logger.info(f"iCloud {path} is missing locally, creating folders...")
+                        logger.info(f"{right} {path} is missing locally, creating folders...")
                         os.makedirs(os.path.join(self._local.root_path, path), exist_ok=True)
                 else:
-                    logger.info(f"iCloud {path} is missing locally, downloading to Local...")
+                    logger.info(f"{right} {path} is missing locally, downloading to Local...")
                     self._pending.add(self._threadpool.submit(self._icloud.download, path, cfi, self._local.add))
             except Exception as e:
                 logger.error(f"iCloud Drive download failed for {path}: {e}")
                 self._icloud.handle_drive_exception(e)
 
     def _sync_common(self, these: LocalTree | iCloudTree, those: iCloudTree) -> None:
+        left = "Local" if isinstance(these, LocalTree) else "iCloud"
+        right = "Refresh" if left == "iCloud" else "iCloud"
         in_common = these.root.keys() & those.root.keys()
         for path in in_common:
             lfi = these.root[path]
@@ -223,17 +227,17 @@ class EventHandler(RegexMatchingEventHandler):
             if isinstance(lfi, FolderInfo) and isinstance(cfi, FolderInfo):
                 continue
             if lfi.modified_time != cfi.modified_time:
-                logger.debug(f"Different time in both: {path} -> Local: {lfi} | iCloud: {cfi}")
+                logger.debug(f"Different time in both: {path} -> {left}: {lfi} | {right}: {cfi}")
                 if lfi.modified_time > cfi.modified_time:
-                    logger.info(f"Local is newer for {path}, uploading to iCloud...")
+                    logger.info(f"{left} is newer for {path}, uploading to iCloud...")
                     self._handle_file_modified(FileModifiedEvent(src_path=path))
                 else:
-                    logger.info(f"iCloud is newer for {path}, downloading to Local...")
+                    logger.info(f"{right} is newer for {path}, downloading to Local...")
                     self._suppressed_paths.add(path)
                     self._pending.add(self._threadpool.submit(those.download, path, cfi, self._local.add))
             else:   
                 if lfi.size != cfi.size:
-                    logger.debug(f"Different size in both: {path} -> Local: {lfi} | iCloud: {cfi}")
+                    logger.debug(f"Different size in both: {path} -> {left}: {lfi} | {right}: {cfi}")
 
     def _retry_exception_events(self) -> None:
         if self._exception_events:
@@ -287,7 +291,7 @@ class EventHandler(RegexMatchingEventHandler):
                 self._icloud.process_folder(root=self._icloud.root, name="root", path=parent_path, force=True, recursive=False)
         except Exception as e:
             logger.error(f"iCloud Drive upload failed for {event.src_path}: {e}")
-            self._icloud.trashhandle_drive_exception(e)
+            self._icloud.handle_drive_exception(e)
             self._exception_events.add(event)
 
     def _handle_file_moved(self, event: FileMovedEvent) -> None:

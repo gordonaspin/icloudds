@@ -82,15 +82,15 @@ def authenticate(
         except PyiCloudFailedLoginException as err:
             # If the user has a stored password; we just used it and
             # it did not work; let's delete it if there is one.
-            if utils.password_exists_in_keyring(username):
-                utils.delete_password_in_keyring(username)
+            #if utils.password_exists_in_keyring(username):
+            #    utils.delete_password_in_keyring(username)
 
-            message = "Bad username or password for {username}".format(username=username)
             failure_count += 1
+            message = f"Bad username or password for {username}, failure count {failure_count}"
+            logger.info(message)
             if failure_count >= constants.AUTHENTICATION_MAX_RETRIES:
                 raise PyiCloudFailedLoginException(message)
 
-            logger.info(message)
 
         except PyiCloudNoStoredPasswordAvailableException:
             if raise_authorization_exception:

@@ -112,9 +112,9 @@ class iCloudTree(BaseTree):
             if ignore and self.ignore(_path, True):
                 continue
             if child.type == "folder":
-                    logger.debug(f"iCloud Drive {name} {_path}")
                     with lock:
-                        root[_path] = iCloudFolderInfo(child)
+                        cfi = root[_path] = iCloudFolderInfo(child)
+                    logger.debug(f"iCloud Drive {name} {_path} {cfi}")
                     if recursive:
                         if executor is not None:
                             future = executor.submit(self.process_folder, root, name, _path, force, recursive, ignore, executor)
@@ -122,11 +122,11 @@ class iCloudTree(BaseTree):
                         else:
                             self.process_folder(root, _path, force, recursive, ignore, executor)
             elif child.type == "file":
-                logger.debug(f"iCloud Drive {name} {_path}")
                 with lock:
                     cfi = root[_path] = iCloudFileInfo(child)
                     # Update parent folder modified time to be that of the newest child (not stored in iCloud Drive)
                     root[relative_path].modified_time = cfi.modified_time if cfi.modified_time > root[relative_path].modified_time else root[relative_path].modified_time
+                logger.debug(f"iCloud Drive {name} {_path} {cfi}")
             else:
                 logger.debug(f"iCloud Drive {name} did not process {child.type} {os.path.join(relative_path, child.name)}")
     
