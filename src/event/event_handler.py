@@ -161,13 +161,13 @@ class EventHandler(RegexMatchingEventHandler):
                         logger.debug(f"Upload failed for {result.path} with exception {result.exception}")
 
     def _dump_state(self, local: LocalTree, icloud: iCloudTree, refresh: iCloudTree=None):
-        filename = "_before.txt"
+        filename = "_before.log"
         if refresh is not None:
-            filename = "_after.txt"
+            filename = "_after.log"
 
         for tree, name in [(local, "local"), (icloud, "icloud"), (refresh, "refresh")]:
             if tree is not None:
-                with open(os.path.join(self.ctx.log_path, name+filename), 'w') as f:
+                with open(os.path.join(self.ctx.log_path, "icloudds_"+name+filename), 'w') as f:
                     sorted_dict = dict(sorted(tree.root.items()))
                     for k, v in sorted_dict.items():
                         f.write(f"{k}: {v!r}\n")
@@ -246,7 +246,7 @@ class EventHandler(RegexMatchingEventHandler):
                 # upload if the left file instance is newer and is a local file
                 # ignore otherwise when the refresh missed an update
                 if lfi.modified_time > cfi.modified_time and isinstance(lfi, LocalFileInfo):
-                    logger.info(f"{left} is newer for {path}, uploading to iCloud...")
+                    logger.debug(f"{left} is newer for {path}, uploading to iCloud Drive...")
                     self._handle_file_modified(FileModifiedEvent(src_path=path))
                 elif lfi.modified_time < cfi.modified_time:
                     logger.info(f"{right} is newer for {path}, downloading to Local...")
