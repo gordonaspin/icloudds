@@ -74,6 +74,7 @@ class EventHandler(RegexMatchingEventHandler):
 
         self._local.refresh()
         if self._icloud.refresh():
+            self._dump_state(local=self._local, icloud=self._icloud)
             self._sync_local_to_icloud()
             self._sync_icloud(self._local, self._icloud)
             self._sync_common(self._local, self._icloud)
@@ -100,7 +101,9 @@ class EventHandler(RegexMatchingEventHandler):
                     result = refresh_future.result()
                     if result:
                         logger.debug(f"Background refresh complete")
+                        self._dump_state(local=self._local, icloud=self._icloud)
                         self._apply_icloud_refresh(refresh)
+                        self._dump_state(local=self._local, icloud=self._icloud, refresh=refresh)
                         self._icloud = refresh
                         root_has_changed = trash_has_changed = False
                         icloud_refresh_period = self.ctx.icloud_refresh_period
@@ -156,6 +159,18 @@ class EventHandler(RegexMatchingEventHandler):
                 elif isinstance(result, UploadActionResult):
                     if result.success == False:
                         logger.debug(f"Upload failed for {result.path} with exception {result.exception}")
+
+    def _dump_state(self, local: LocalTree, icloud: iCloudTree, refresh: iCloudTree=None):
+        filename = "_before.txt"
+        if refresh is not None:
+            filename = "_after.txt"
+
+        for tree, name in [(local, ".local"), (icloud, ".icloud"), (refresh, ".refresh")]:
+            if tree is not None:
+                with open(name+filename, 'w') as f:
+                    sorted_dict = dict(sorted(tree.root.items()))
+                    for k, v in sorted_dict.items():
+                        f.write(f"{k}: {v!r}\n")
 
     def _apply_icloud_refresh(self, refresh: iCloudTree) -> None:
         self._sync_icloud(self._icloud, refresh)
@@ -228,10 +243,12 @@ class EventHandler(RegexMatchingEventHandler):
                 continue
             if lfi.modified_time != cfi.modified_time:
                 logger.debug(f"Different time in both: {path} -> {left}: {lfi} | {right}: {cfi}")
-                if lfi.modified_time > cfi.modified_time:
+                # upload if the left file instance is newer and is a local file
+                # ignore otherwise when the refresh missed an update
+                if lfi.modified_time > cfi.modified_time and isinstance(lfi, LocalFileInfo):
                     logger.info(f"{left} is newer for {path}, uploading to iCloud...")
                     self._handle_file_modified(FileModifiedEvent(src_path=path))
-                else:
+                elif lfi.modified_time < cfi.modified_time:
                     logger.info(f"{right} is newer for {path}, downloading to Local...")
                     self._suppressed_paths.add(path)
                     self._pending.add(self._threadpool.submit(those.download, path, cfi, self._local.add))

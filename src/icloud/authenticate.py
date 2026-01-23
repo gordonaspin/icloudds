@@ -86,7 +86,7 @@ def authenticate(
             #    utils.delete_password_in_keyring(username)
 
             failure_count += 1
-            message = f"Bad username or password for {username}, failure count {failure_count}"
+            message = f"PyiCloudFailedLoginException for {username}, {err}, failure count {failure_count}"
             logger.info(message)
             if failure_count >= constants.AUTHENTICATION_MAX_RETRIES:
                 raise PyiCloudFailedLoginException(message)

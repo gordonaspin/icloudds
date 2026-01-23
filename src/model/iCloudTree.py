@@ -20,6 +20,9 @@ from model.ActionResult import DownloadActionResult, UploadActionResult
 
 logger = logging.getLogger(__name__)
 
+class iCloudMismatchException(Exception):
+    pass
+
 class iCloudTree(BaseTree):
     def __init__(self, ctx: Context):
         self.drive: pyicloud.services.drive.DriveService = None
@@ -54,13 +57,14 @@ class iCloudTree(BaseTree):
                     for future in done:
                         new_futures = future.result()
                         pending.update(new_futures)
-            if self.root_count != sum(1 for _ in self.files(self._root)) + sum(1 for _ in self.files(self._trash)):
-                raise Exception("Mismatch in counts")
+            root_files_count = sum(1 for _ in self.files(self._root))
+            trash_files_count = sum(1 for _ in self.files(self._trash))
+            if self.root_count != root_files_count + trash_files_count:
+                raise iCloudMismatchException(f"Mismatch root_count: {self.root_count} != root_files_count: {root_files_count} + trash_files_count: {trash_files_count}")
             
         except Exception as e:
             self.handle_drive_exception(e)
             succeeded = False
-            logger.error(f"iCloud Drive exception in refresh: {e}")
 
         logger.debug(f"Refresh iCloud Drive complete root has {len(self._root)} items, root count {self.root_count}, {sum(1 for _ in self.folders(self._root))} folders, {sum(1 for _ in self.files(self._root))} files")
         logger.debug(f"Refresh iCloud Drive complete trash has {len(self._trash)} items, trash count {self.trash_count}, {sum(1 for _ in self.folders(self._trash))} folders, {sum(1 for _ in self.folders(self._trash))} files")
@@ -125,7 +129,7 @@ class iCloudTree(BaseTree):
                 with lock:
                     cfi = root[_path] = iCloudFileInfo(child)
                     # Update parent folder modified time to be that of the newest child (not stored in iCloud Drive)
-                    root[relative_path].modified_time = cfi.modified_time if cfi.modified_time > root[relative_path].modified_time else root[relative_path].modified_time
+                    #root[relative_path].modified_time = cfi.modified_time if cfi.modified_time > root[relative_path].modified_time else root[relative_path].modified_time
                 logger.debug(f"iCloud Drive {name} {_path} {cfi}")
             else:
                 logger.debug(f"iCloud Drive {name} did not process {child.type} {os.path.join(relative_path, child.name)}")
@@ -149,7 +153,7 @@ class iCloudTree(BaseTree):
             return UploadActionResult(success=True)
         except Exception as e:
             self.handle_drive_exception(e)
-            return UploadActionResult(success=False, fn=self.upload, args=[str, lfi], exception=e)
+            return UploadActionResult(success=False, path=path, fn=self.upload, args=[str, lfi], exception=e)
 
     def download(self, path: str, cfi: iCloudFileInfo, apply_after: Callable[[str], str]) -> DownloadActionResult:
         try:
@@ -169,7 +173,7 @@ class iCloudTree(BaseTree):
 
         except Exception as e:
             self.handle_drive_exception(e)
-            return DownloadActionResult(success=False, fn=self.upload, args=[path, cfi, apply_after], exception=e)
+            return DownloadActionResult(success=False, path=path, fn=self.upload, args=[path, cfi, apply_after], exception=e)
 
     def create_icloud_folders(self, path: str) -> iCloudFolderInfo:
         try:
@@ -247,6 +251,8 @@ class iCloudTree(BaseTree):
             case PyiCloudAPIResponseException():
                 logger.error(f"iCloud Drive exception: {e}")
                 self._is_authenticated = False
+            case iCloudMismatchException():
+                logger.error(f"iCloud Drive iCloudMismatchException in refresh: {e}")
             case _:
                 logger.error(f"iCloud Drive unhandled exception: {e}")
     
