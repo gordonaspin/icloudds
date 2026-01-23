@@ -42,7 +42,9 @@ def main(directory: str, username: str, password: str, cookie_directory: str,
     ignore_local   = [line.strip() for line in open(ignore_local).readlines()   if not line.startswith('#')] if ignore_local and os.path.isfile(ignore_local) else []
     include_icloud = [line.strip() for line in open(include_icloud).readlines() if not line.startswith('#')] if include_icloud and os.path.isfile(include_icloud) else []
     include_local  = [line.strip() for line in open(include_local).readlines()  if not line.startswith('#')] if include_local and os.path.isfile(include_local) else []
-    
+
+    log_path = setup_logging(logging_config=logging_config)
+
     context = Context(directory=directory,
                       username=username,
                       password=password,
@@ -52,11 +54,11 @@ def main(directory: str, username: str, password: str, cookie_directory: str,
                       include_local=include_local,
                       include_icloud=include_icloud,
                       logging_config=logging_config,
+                      log_path=log_path,
                       retry_period=timedelta(seconds=retry_period),
                       icloud_check_period=timedelta(seconds=icloud_check_period),
                       icloud_refresh_period=timedelta(seconds=icloud_refresh_period))
     
-    setup_logging(context)
     logger.info(f"{name} {importlib.metadata.version("icloudds")}")
 
     if password is not None:

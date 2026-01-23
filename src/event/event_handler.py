@@ -165,9 +165,9 @@ class EventHandler(RegexMatchingEventHandler):
         if refresh is not None:
             filename = "_after.txt"
 
-        for tree, name in [(local, ".local"), (icloud, ".icloud"), (refresh, ".refresh")]:
+        for tree, name in [(local, "local"), (icloud, "icloud"), (refresh, "refresh")]:
             if tree is not None:
-                with open(name+filename, 'w') as f:
+                with open(os.path.join(self.ctx.log_path, name+filename), 'w') as f:
                     sorted_dict = dict(sorted(tree.root.items()))
                     for k, v in sorted_dict.items():
                         f.write(f"{k}: {v!r}\n")

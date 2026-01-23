@@ -10,8 +10,8 @@ from typing import override
 from context import Context
 import constants as constants
 
-def setup_logging(ctx: Context) -> None:
-    config_file = pathlib.Path(ctx.logging_config)
+def setup_logging(logging_config: str) -> str:
+    config_file = pathlib.Path(logging_config)
     try:
         with open(config_file) as f_in:
             config = json.load(f_in)
@@ -30,7 +30,9 @@ def setup_logging(ctx: Context) -> None:
     queue_handler = logging.getHandlerByName("queue_handler")
     if queue_handler is not None:
         queue_handler.listener.start()
-        atexit.register(queue_handler.listener.stop)    
+        atexit.register(queue_handler.listener.stop)
+    
+    return folder_path
 
 LOG_RECORD_BUILTIN_ATTRS = {
     "args",
