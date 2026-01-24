@@ -4,17 +4,20 @@
 
 - A command-line tool to synchronize your iCloud Drive with a local filesystem folder.
 - Works on Linux, Windows, and MacOS.
-- Run in the background to keep your iCloud Drive folders and contents in sync with the local filesysystem  
+- Run in the background or as a docker container to keep your iCloud Drive folders and contents in sync with the local filesysystem  
 
 `icloudds`'s basic operation is as follows:
 1. Scan the local file system under the --directory specified
 2. Scan your iCloud Drive root and trash folders
-3. Apply differences to both local and iCloud (create/delete/upload/download folders and files)
-4. Monitor the local file system under the --directory specified and apply changes as they occur
-5. Check iCloud Drive and Trash for changes every --icloud-refres-period seconds (default 90) and apply changes
-6. Perform 4 and 5 until exit
+3. Apply differences to both local and iCloud Drive (create/delete/upload/download folders and files)
+4. React to local file system events under the --directory specified and apply changes as they occur to iCloud Drive
+5. Check iCloud Drive and Trash for changes every --icloud-check-period seconds (default 20) and apply changes
+6. Perform an iCloud Drive refresh every --icloud-refresh-period seconds (default 90), regardless of result of #5 above
+6. Perform 4, 5 and 6 forever
 
-`icloudds` scans your local filesystem under --directory and builds a model of folders and files in memory. Next it does the same for iCloud by scanning all the folders and files. It creates local folders under the --directory you provide, if needed and downloads files that have a modification date newer than those that exist. If the file does not exist locally, it is downloaded and its modification time is set to that of the iCloud Drive item. `icloudds` uploads files that are newer or don't exist in iCloud, including directories. When the upload phase is complete, `icloudds` watches the local filesystem for changes and makes the corresponding add/delete/upload to iCloud Drive. `icloudds` detects changes made to your iCloud Drive and refreshing its in-memory model and applies and changes such as adds/deletes/moves/updates etc.
+`icloudds` scans your local filesystem under --directory and builds a model of folders and files in memory. Next it does the same for iCloud by scanning all the folders and files. It creates local folders under the --directory you provide, if needed and downloads files that have a modification date newer than those that exist. If the file does not exist locally, it is downloaded and its modification time is set to that of the iCloud Drive item. `icloudds` uploads files that are newer or don't exist in iCloud, including directories. When the upload phase is complete, `icloudds` watches the local filesystem for changes and makes the corresponding add/delete/upload to iCloud Drive. `icloudds` detects changes made to your iCloud Drive, refreshes its in-memory model and applies changes such as adds/deletes/moves/updates accordingly.
+
+*Warning*: Although `icloudds` will run on MacOS, it is not advisable as a) it's not needed of course, and b) race conditions will likely cause duplication of files
 
 ## High Level Design of `icloudds`
 `icloudds` generally works on a model of two lists; one is a list of all files and folders under the --directory path on the local filesystem, the second list is all the items in your iCloud drive. When `icloudds` first starts these two lists are generated and then compared. Files in iCloud missing locally are downloaded. Local files that are missing from iCloud are uploaded. Those files/folders in common have their timestamps checked. Newer files are either uploaded or downloaded. If the objects have the same date but different size, they are ignored.
@@ -24,7 +27,7 @@ One this initial sync is complete, `icloudds` starts listening for local file sy
 ### More detail
 `icloudds` uses the python watchdog filesystem event generator. When a file is created watchdog generates many events so `icloudds` coalesces these events before dispatching to handlers. In addition to this, when `icloudds` needs to download, rename, create files locally it suppresses event dispatch for those paths. `icloudds` does perform a sanity check on iCloud Drive refreshes. iCloud's model includes a fileCount at the root node and after a refresh `icloudds` checks its count of files/folders with what iCloud reports and if it's different, `icloudds` discards the refresh and will try later, using a backoff algorithm to let things settle in iCloud Drive.
 
-`icloudds` uses threads managed by the python ThreadPoolExecutor. Traversing the iCloud model does take time as it takes multiple round-trips to walk the entire tree. In this respect, starting at the root node, a thread is spawned for each sub-folder to retrieve information about that folder, and again more threads are spawned for each of its subfolfers, and so-on. All these Futures are gathered and waited on until they finish. This is the fastest way to retrieve all the iCloud node information. Uploads and downloads of file are also spawned off as separate threads. To protect the ingtegrity of the iCloud file list, access to it is protected with a Lock during the multithreaded refresh. When not refreshing, the iCloud list and local list are only modified in the context of the thread running the EventHandler.
+`icloudds` uses threads managed by the python ThreadPoolExecutor. Traversing the iCloud model does take time as it takes multiple round-trips to walk the entire tree. In this respect, starting at the root node, a thread is spawned for each sub-folder to retrieve information about that folder, and again more threads are spawned for each of its subfolfers, and so-on. All these Futures are gathered and waited on until they finish. This is the fastest way to retrieve all the iCloud node information. Uploads and downloads of files are also spawned off as separate threads. To protect the integrity of the iCloud file list, access to it is protected with a Lock during the multithreaded refresh. When not refreshing, the iCloud list and local list are only modified in the context of the thread running the EventHandler.
 
 ### Odds and Ends
 Along the way of implementing this and my prior version of iCloud Drive Sync I learned a few wierd ways that iCloud works:
@@ -78,6 +81,16 @@ In the snippet below, "name" is a path name to a file relative from the --direct
 ## Logging
 `icloudds` uses python logging. The configuration of logging is externalized to a .json file according to the specs of python logging. You can modify this to your needs. I typically run with minimal logging to stderr, and DEBUG logging to the rolling icloudds.log* files.
 
+### State Logging
+`icloudds` writes to a set of file periodically. These files contain information about the state of the local filesystem and the icloud folders and files. There are 5 files created; local_before.log, icloud_before.log, local_after.log, icloud_after.log and refresh_after.log:
+- local_before.log - represents what `icloudds` is tracking as the state of the local filesystem objects before a refresh is applied
+- icloud_before.log - represents what `icloudds` is tracking as the state of icloud folders and files before a refresh is applied
+- local_after.log - represents what `icloudds` is tracking as the state of the local filesystem objects after the refresh is applied
+- icloud_after.log - represents what `icloudds` is tracking as the state of icloud folders and files after the refresh is applied
+- refresh_after.log - represents what `icloudds` is tracking as the NEW state of the icloud folders and files used to make changes to local and icloud (new files, renames, deletes, moves etc.)
+
+By default, `icloudds` creates the logging log file in the current working directory. You may specify a path in the logging-config.json and `icloudds` will create the path if needed. In addition, `icloudds` will use that path for the state logging files. If you run icloudds in the docker container, these files will be inside the container. See below how to access those files, or have them written to the host filesystem.
+
 # Clone, Install dependencies, Build, Install and Run
 `icloudds` depends on a forked version of python pyicloud library implementation pyicloud @ git+https://github.com/timlaing/pyicloud.git. This forked implementation has added features to properly set timestamps of objects uploaded to iCloud Drive and it resolves a retrieval limit of 200 albums (in Photos). This implementation includes features I added to my fork of pyicloud, which is no longer needed. Do not use the `pyicloud` Python package that can be installed using `pip`, it is old and does not have the required features.
 
@@ -125,7 +138,7 @@ $ pip install dist/*.whl
 $ python icloudds.py -h
 ```
 or, if you build and install the wheel from the dist/ folder
-``` sh
+```
 $ icloudds -h
 
 Usage: icloudds <options>
@@ -160,7 +173,7 @@ Options:
 Example:
 
 ``` sh
-icloudds --directory ./Drive --username testuser@example.com --password pass1234 
+$ icloudds --directory ./Drive --username testuser@example.com --password pass1234 
 ```
 
 ## Requirements
@@ -191,65 +204,86 @@ This error often happens because your account hasn't used the iCloud API before,
 
 If you are still seeing this message after 30 minutes, then please [open an issue on GitHub](https://github.com/gordonaspin/icloudds/issues/new) and post the script output.
 
-## Docker
+# Docker
 
-This script is available in a Docker image:
+This script is available in a Docker image on Docker Hub:
 ``` sh
-docker pull gordonaspin/icloudds:latest
+$ docker pull gordonaspin/icloudds:latest
 ```
 The image defines an entrypoint:
 ``` sh
 ENTRYPOINT [ "icloudds", "-d", "/drive", "--cookie-directory", "/cookies" ]
 ```
-Usage:
+### On Linux:
 
 ``` sh
 # Downloads all iCloud Drive items to ./Drive
 
-docker pull gordonaspin/icloudds:latest
-docker run -it --name icloudds \
+$ docker pull gordonaspin/icloudds:latest
+$ docker run -it --name icloudds \
     -v $(pwd)/Drive:/drive \
     -v $(pwd)/cookies:/cookies \
     gordonaspin/icloudds:latest \
-    --username testuser@example.com \
+    --username testuser@example.com 
 ```
 
-On Windows:
+### On Windows:
 
 - use `%cd%` instead of `$(pwd)`
 - or full path, e.g. `-v c:/icloud/Drive:/drive`
 
-Building docker image from this repo and gordonaspin/pyicloud repo image locally:
+### Building the docker image
 
+#### Building docker image from this repo:
 ``` sh
-docker build --tag your-repo/icloudds:latest --progress=plain -f ./Dockerfile
-
-# the pyicloud icloud command line utility
-# this will optionally create a python keyring in the container for future use, cookies will go to a tmp folder in the container
-docker exec -it icloudds icloud --username apple_id@mail.com
-
-# run icloudds -h
-docker exec -it icloudds icloudds -h
-
-# start the container with mounts for the Drive folder and cookie storage:
-docker run -it --name icloudds -v ~/iCloud\ Drive:/drive -v ~/.pyicloud:/cookies your-repo/icloudds -u username@email.com
-
+$ docker build --tag your-repo/icloudds:latest --progress=plain -f ./Dockerfile
 ```
-
-The container has the default .ignore*, .include* and logging-config.json files in the home folder of the docker user and these are used by default. To change this you can edit the files in the container in /home/docker, or override permamently you can build your own container with the contents changed, or you can specify the --include and --ignore command line arguments that refer to a path you mount to the container. e.g.:
+#### Building docker image from local source code and timlaing/pyicloud repo image locally:
 ``` sh
-docker run -it --name icloudds -v ~/iCloud\ Drive:/drive -v ~/.pyicloud:/cookies your-repo/icloudds -v ~/.config:/cfg -u username@email.com --ignore-icloud /cfg/<filename> --ignore-local /cfg/<filename> --include-icloud /cfg/<filename> --include-local /cfg/<filename>
+$ docker build --tag your-repo/icloudds:latest --progress=plain -f ./Dockerfile.local
 ```
-The container as-built has verbose DEBUG logging to file enabled, but the log files are inside the container. These are accessible for example like so:
+### Running the docker image
+``` sh
+# Optionally, run the pyicloud icloud command line utility.
+# This will create a python keyring in the container for future use, and cookies will go to ~/.pyicloud in the container
+$ docker exec -it icloud --username your-icloud-email-address --password your-icloud-password
+# Run icloudds in the container, specifying external mounted folders for the directory and cookies folders
+$ docker run -it --restart=always --name icloudds -v "path/to/directory":/drive -v ~/.pyicloud:/cookies <your-repo>/icloudds:latest -u username@email.com 
+```
+The container as-built has verbose DEBUG logging to file enabled and terse logging to stderr. The terse logging is what you see with `docker logs icloudds`. The verbose DEBUG log files are inside the container and rollover 3 times as icloudds.log, icloudds.log.1, icloudds.log.2 and icloudds.log.3. These are accessible for example like so:
 ``` sh
 $ docker exec -it icloudds /bin/bash -c "tail -F icloudds.log"
+# or
+$ docker cp icloudds icloudds.log .
+$ docker cp icloudds icloudds.log.1 .
 ```
 You can modify the logging-config.json by editing it inside the container like so:
 ``` sh
 $ docker exec -it icloudds /bin/bash -c "vi logging-config.json"
 ```
 Using this approach is easy, but will not persist if you delete the container. An example of moving the include/exclude files and logging-config.json to outside the container would look something like this:
+Suppose you specify a path in the logging-config.json as log/icloudds.log. This will result in log files in the container in the /home/docker/log folder. You can map a host folder to be mounted at /home/docker/log inside the container. This will externalize and persist log files outside the container.
+
 ``` sh
-docker run -it --name icloudds -v ~/iCloud\ Drive:/drive -v ~/.pyicloud:/cookies your-repo/icloudds -v ~/.config:/cfg -u username@email.com --ignore-icloud /cfg/<filename> --ignore-local /cfg/<filename> --include-icloud /cfg/<filename> --include-local /cfg/<filename> --logging-config /cfg/logging-config.json
+$ docker run -it --restart=always --name icloudds -v "path/to/directory":/drive -v ~/.pyicloud:/cookies -v "/var/log":/home/docker/log <your-repo>/icloudds:latest -u username@email.com 
+```
+The container has the default .ignore*, .include* and logging-config.json files in the /home/docker folder of the docker user and these are used by default. To change this you can edit the files in the container in /home/docker, or override by ciopying the files to a folder on the host and edit them and map that folder to /home/docker. Or you can build your own container with the contents changed, or you can specify the --include and --ignore command line arguments that refer to a path you mount to the container. e.g.:
+
+#### Unchanged container, mount host folder over /home/docker:
+``` sh
+# Copy and edit the config files as needed
+$ cd ~/somepath
+$ docker cp icloudds:.include-icloud.txt .
+$ docker cp icloudds:.include-local.txt .
+$ docker cp icloudds:.ignore-icloud.txt .
+$ docker cp icloudds:.ignore-icloud.txt .
+$ docker cp icloudds:logging-config.json .
+
+$ docker run -it --name icloudds -v ~/iCloud\ Drive:/drive -v ~/.pyicloud:/cookies your-repo/icloudds -v ~/somepath:/home/docker -u username@email.com
+# This will result in log files and state log files appearing in the ~/somepath folder (external to the container)
+```
+#### Unchanged container, mount a cfg folder and provide command line arguments
+``` sh
+$ docker run -it --name icloudds -v ~/iCloud\ Drive:/drive -v ~/.pyicloud:/cookies your-repo/icloudds -v ~/.config:/cfg -u username@email.com --ignore-icloud /cfg/<filename> --ignore-local /cfg/<filename> --include-icloud /cfg/<filename> --include-local /cfg/<filename> --logging-config /cfg/logging-config.json
 ```
 In the example above, you would have your ignore files, include files and logging-config.json files in your `~/.config` folder and refer to them on the command line as `/cfg/filename`

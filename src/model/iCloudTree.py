@@ -168,7 +168,8 @@ class iCloudTree(BaseTree):
                             f.flush()
 
             os.utime(file_path, (cfi.modified_time.timestamp(), cfi.modified_time.timestamp()))
-            apply_after(path)
+            with self._lock:
+               apply_after(path)
             return DownloadActionResult(success=True)
 
         except Exception as e:
