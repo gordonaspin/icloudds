@@ -5,7 +5,6 @@ from urllib3 import disable_warnings
 from urllib3.exceptions import InsecureRequestWarning
 from concurrent.futures import ThreadPoolExecutor, Future, as_completed
 import threading
-from threading import Lock
 import pyicloud.services.drive
 from pyicloud.services.drive import DriveNode, CLOUD_DOCS_ZONE_ID_ROOT, CLOUD_DOCS_ZONE_ID_TRASH
 from pyicloud.exceptions import PyiCloudAPIResponseException
@@ -26,11 +25,8 @@ class iCloudMismatchException(Exception):
 class iCloudTree(BaseTree):
     def __init__(self, ctx: Context):
         self.drive: pyicloud.services.drive.DriveService = None
-        self._trash: dict[str, BaseInfo] = {}
         self._is_authenticated: bool = False
         self.ctx = ctx
-        self._lock = Lock()
-        self._trashlock = Lock()
         super().__init__(root_path=ctx.directory, ignores=ctx.ignore_icloud, includes=ctx.include_icloud)
 
     def authenticate(self) -> None:
@@ -93,12 +89,10 @@ class iCloudTree(BaseTree):
 
     def process_folder(self, root=None, name=None, path=None, force=False, recursive=True, ignore=True, executor=None) -> None|list[Future]:
         if name == "root":
-            lock = self._lock
             if self._root == {}:
                 logger.debug(f"resolving iCloud Drive {name}")
                 self._root[BaseTree.ROOT_FOLDER_NAME] = iCloudFolderInfo(self.drive.root)
         elif name == "trash":
-            lock = self._trashlock
             if self._trash == {}:
                 logger.debug(f"resolving iCloud Drive {name}")
                 self._trash[BaseTree.ROOT_FOLDER_NAME] = iCloudFolderInfo(self.drive.trash)
@@ -116,8 +110,7 @@ class iCloudTree(BaseTree):
             if ignore and self.ignore(_path, True):
                 continue
             if child.type == "folder":
-                    with lock:
-                        cfi = root[_path] = iCloudFolderInfo(child)
+                    cfi = root[_path] = iCloudFolderInfo(child)
                     logger.debug(f"iCloud Drive {name} {_path} {cfi}")
                     if recursive:
                         if executor is not None:
@@ -126,10 +119,9 @@ class iCloudTree(BaseTree):
                         else:
                             self.process_folder(root, _path, force, recursive, ignore, executor)
             elif child.type == "file":
-                with lock:
-                    cfi = root[_path] = iCloudFileInfo(child)
-                    # Update parent folder modified time to be that of the newest child (not stored in iCloud Drive)
-                    #root[relative_path].modified_time = cfi.modified_time if cfi.modified_time > root[relative_path].modified_time else root[relative_path].modified_time
+                cfi = root[_path] = iCloudFileInfo(child)
+                # Update parent folder modified time to be that of the newest child (not stored in iCloud Drive)
+                #root[relative_path].modified_time = cfi.modified_time if cfi.modified_time > root[relative_path].modified_time else root[relative_path].modified_time
                 logger.debug(f"iCloud Drive {name} {_path} {cfi}")
             else:
                 logger.debug(f"iCloud Drive {name} did not process {child.type} {os.path.join(relative_path, child.name)}")
@@ -168,8 +160,7 @@ class iCloudTree(BaseTree):
                             f.flush()
 
             os.utime(file_path, (cfi.modified_time.timestamp(), cfi.modified_time.timestamp()))
-            with self._lock:
-               apply_after(path)
+            apply_after(path)
             return DownloadActionResult(success=True)
 
         except Exception as e:

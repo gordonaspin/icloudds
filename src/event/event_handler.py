@@ -33,13 +33,13 @@ class EventHandler(RegexMatchingEventHandler):
         self._local = LocalTree(ctx=ctx)
         for s in self._local.ignores_patterns:
             logger.info(f"ignore local: {s}")
-        for s in self._local.includes_patterns:
+        for s in self._local.includes_list:
             logger.info(f"include local: {s}")
 
         self._icloud = iCloudTree(ctx=ctx)
         for s in self._icloud.ignores_patterns:
             logger.info(f"ignore icloud: {s}")
-        for s in self._icloud.includes_patterns:
+        for s in self._icloud.includes_list:
             logger.info(f"include icloud: {s}")
 
         super().__init__(regexes=None, ignore_regexes=self._local.ignores_patterns, ignore_directories=False, case_sensitive=False)

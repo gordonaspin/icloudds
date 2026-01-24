@@ -27,8 +27,21 @@ One this initial sync is complete, `icloudds` starts listening for local file sy
 ### More detail
 `icloudds` uses the python watchdog filesystem event generator. When a file is created watchdog generates many events so `icloudds` coalesces these events before dispatching to handlers. In addition to this, when `icloudds` needs to download, rename, create files locally it suppresses event dispatch for those paths. `icloudds` does perform a sanity check on iCloud Drive refreshes. iCloud's model includes a fileCount at the root node and after a refresh `icloudds` checks its count of files/folders with what iCloud reports and if it's different, `icloudds` discards the refresh and will try later, using a backoff algorithm to let things settle in iCloud Drive.
 
-`icloudds` uses threads managed by the python ThreadPoolExecutor. Traversing the iCloud model does take time as it takes multiple round-trips to walk the entire tree. In this respect, starting at the root node, a thread is spawned for each sub-folder to retrieve information about that folder, and again more threads are spawned for each of its subfolfers, and so-on. All these Futures are gathered and waited on until they finish. This is the fastest way to retrieve all the iCloud node information. Uploads and downloads of files are also spawned off as separate threads. To protect the integrity of the iCloud file list, access to it is protected with a Lock during the multithreaded refresh. When not refreshing, the iCloud list and local list are only modified in the context of the thread running the EventHandler.
+`icloudds` uses threads managed by the python ThreadPoolExecutor. Traversing the iCloud model does take time as it takes multiple round-trips to walk the entire tree. In this respect, starting at the root node, a thread is spawned for each sub-folder to retrieve information about that folder, and again more threads are spawned for each of its subfolfers, and so-on. All these Futures are gathered and waited on until they finish. This is the fastest way to retrieve all the iCloud node information. Uploads and downloads of files are also spawned off as separate threads. To protect the integrity of the iCloud file list, `icloudds` uses a ThreadSafeDict protected with a Lock.
+``` python
+class ThreadSafeDict(UserDict):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._lock = Lock()
 
+    def __setitem__(self, key, value):
+        with self._lock:
+            super().__setitem__(key, value)
+
+    def __getitem__(self, key):
+        with self._lock:
+            return super().__getitem__(key)
+```
 ### Odds and Ends
 Along the way of implementing this and my prior version of iCloud Drive Sync I learned a few wierd ways that iCloud works:
 1. iCloud Drive stores file timestamps in UTC, but rounds up timestamps to the nearest second. Annoying.
@@ -62,18 +75,18 @@ ThatFolder
 ```
 In this example, if used with --include-icloud only files in the ThisFolder and ThatFolder will be processed, everything else will be ignored.
 ### How it works in code
-In the snippet below, "name" is a path name to a file relative from the --directory command line option. e.g. "MyFolder/some-file-name.txt". Processing this item will be ignored if it matches with one of the regexes from the ignore specs. If it does not match a regex, the name is compared to see if it starts with any one of the includes patterns from the include specs. If the name does not start with any of those patterns, the file / folder is ignored.
+In the snippet below, "name" is a path name to a file relative from the --directory command line option. e.g. "MyFolder/some-file-name.txt". Processing this item will be ignored if it matches with one of the regexes from the ignore specs. If it does not match a regex, the name is compared to see if it starts with any one of the includes folders from the include specs. If the name does not start with any of those patterns, the file / folder is ignored.
 ```python
     def ignore(self, name, isFolder: bool = False) -> bool:
         for ignore_regex in self._ignores_regexes:
             if re.match(ignore_regex, name):
                 return True
         
-        if not self._includes_patterns:
+        if not self._includes_list:
             return False
         
-        for startswith_pattern in self._includes_patterns:
-            if name.startswith(startswith_pattern):
+        for startswith in self._includes_list:
+            if name.startswith(startswith):
                 return False
                 
         return True
@@ -82,12 +95,12 @@ In the snippet below, "name" is a path name to a file relative from the --direct
 `icloudds` uses python logging. The configuration of logging is externalized to a .json file according to the specs of python logging. You can modify this to your needs. I typically run with minimal logging to stderr, and DEBUG logging to the rolling icloudds.log* files.
 
 ### State Logging
-`icloudds` writes to a set of file periodically. These files contain information about the state of the local filesystem and the icloud folders and files. There are 5 files created; local_before.log, icloud_before.log, local_after.log, icloud_after.log and refresh_after.log:
-- local_before.log - represents what `icloudds` is tracking as the state of the local filesystem objects before a refresh is applied
-- icloud_before.log - represents what `icloudds` is tracking as the state of icloud folders and files before a refresh is applied
-- local_after.log - represents what `icloudds` is tracking as the state of the local filesystem objects after the refresh is applied
-- icloud_after.log - represents what `icloudds` is tracking as the state of icloud folders and files after the refresh is applied
-- refresh_after.log - represents what `icloudds` is tracking as the NEW state of the icloud folders and files used to make changes to local and icloud (new files, renames, deletes, moves etc.)
+`icloudds` writes to a set of file periodically. These files contain information about the state of the local filesystem and the icloud folders and files. There are 5 files created; icloudds_local_before.log, icloudds_icloud_before.log, icloudds_local_after.log, icloudds_icloud_after.log and icloudds_refresh_after.log:
+- icloudds_local_before.log - represents what `icloudds` is tracking as the state of the local filesystem objects before a refresh is applied
+- icloudds_icloud_before.log - represents what `icloudds` is tracking as the state of icloud folders and files before a refresh is applied
+- icloudds_local_after.log - represents what `icloudds` is tracking as the state of the local filesystem objects after the refresh is applied
+- icloudds_icloud_after.log - represents what `icloudds` is tracking as the state of icloud folders and files after the refresh is applied
+- icloudds_refresh_after.log - represents what `icloudds` is tracking as the NEW state of the icloud folders and files used to make changes to local and icloud (new files, renames, deletes, moves etc.)
 
 By default, `icloudds` creates the logging log file in the current working directory. You may specify a path in the logging-config.json and `icloudds` will create the path if needed. In addition, `icloudds` will use that path for the state logging files. If you run icloudds in the docker container, these files will be inside the container. See below how to access those files, or have them written to the host filesystem.
 

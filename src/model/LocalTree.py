@@ -19,7 +19,7 @@ class LocalTree(BaseTree):
     def refresh(self):
         logger.debug(f"Refreshing Local Drive {self._root_path}...")
         if self._root == {}:
-            self._root = {BaseTree.ROOT_FOLDER_NAME: LocalFolderInfo(BaseTree.ROOT_FOLDER_NAME)} #, os.stat(self._root_path))}
+            self._root[BaseTree.ROOT_FOLDER_NAME] = LocalFolderInfo(BaseTree.ROOT_FOLDER_NAME)
         self._add_children(self._root_path)
         logger.debug(f"Refresh local complete root has {len(self.root)} items, {sum(1 for _ in self.folders(self.root))} folders, {sum(1 for _ in self.files(self.root))} files")
 
@@ -49,8 +49,7 @@ class LocalTree(BaseTree):
                         if self.ignore(path):
                             continue
                         logger.debug(f"Local file {path}")
-                        lfi = LocalFileInfo(name=entry.name, stat_entry=stat_entry)
-                        self._root[path] = lfi
+                        self._root[path] = LocalFileInfo(name=entry.name, stat_entry=stat_entry)
                     elif entry.is_dir(follow_symlinks=True):
                         if self.ignore(path):
                             continue
