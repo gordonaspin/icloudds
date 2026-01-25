@@ -113,6 +113,9 @@ class EventHandler(RegexMatchingEventHandler):
                     refresh_future = None
 
                 if datetime.now() - refresh_dt > icloud_check_period:
+                    # Don't check for updates if the refresh thread is running
+                    if refresh_future:
+                        continue
                     futures: list[Future] = []
                     if not root_has_changed:
                         root_changed_future = self._threadpool.submit(self._icloud.has_root_filecount_changed)
@@ -123,7 +126,7 @@ class EventHandler(RegexMatchingEventHandler):
                     wait(futures)
                     root_has_changed = root_changed_future.result()
                     trash_has_changed = trash_changed_future.result()
-                    if refresh_future is None and (datetime.now() - refresh_dt > icloud_refresh_period or root_has_changed or trash_has_changed):
+                    if datetime.now() - refresh_dt > icloud_refresh_period or root_has_changed or trash_has_changed:
                         if datetime.now() - refresh_dt > icloud_refresh_period:
                             logger.debug("refresh period elapsed")
                         if root_has_changed:

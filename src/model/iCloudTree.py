@@ -44,21 +44,24 @@ class iCloudTree(BaseTree):
             logger.debug(f"Refreshing iCloud Drive {self.ctx.username}::{self.drive.service_root}...")
             with ThreadPoolExecutor(os.cpu_count()*4) as executor:
                 pending = set()
-                for (root, name) in [(self._root, "root"), (self._trash, "trash")]:
+                for (_root, name, icf) in [(self._root, "root", iCloudFolderInfo(self.drive.root)), (self._trash, "trash", iCloudFolderInfo(self.drive.trash))]:
                     logger.debug(f"Refreshing iCloud Drive {name}...")
-                    future = executor.submit(self.process_folder, root=root, name=name, path=None, force=True, recursive=True, ignore=False, executor=executor)
+                    _root[BaseTree.ROOT_FOLDER_NAME] = icf
+                    future = executor.submit(self.process_folder, root=_root, name=name, path=None, force=True, recursive=True, ignore=False, executor=executor)
                     pending = pending | set([future])
                 while pending:
                     done, pending = as_completed(pending), set()
                     for future in done:
                         new_futures = future.result()
                         pending.update(new_futures)
+
             root_files_count = sum(1 for _ in self.files(self._root))
             trash_files_count = sum(1 for _ in self.files(self._trash))
             if self.root_count != root_files_count + trash_files_count:
                 raise iCloudMismatchException(f"Mismatch root_count: {self.root_count} != root_files_count: {root_files_count} + trash_files_count: {trash_files_count}")
             
         except Exception as e:
+            logger.error(f"Exception in refresh {e}")
             self.handle_drive_exception(e)
             succeeded = False
 
@@ -88,21 +91,22 @@ class iCloudTree(BaseTree):
         return self._trash
 
     def process_folder(self, root=None, name=None, path=None, force=False, recursive=True, ignore=True, executor=None) -> None|list[Future]:
-        if name == "root":
-            if self._root == {}:
-                logger.debug(f"resolving iCloud Drive {name}")
-                self._root[BaseTree.ROOT_FOLDER_NAME] = iCloudFolderInfo(self.drive.root)
-        elif name == "trash":
-            if self._trash == {}:
-                logger.debug(f"resolving iCloud Drive {name}")
-                self._trash[BaseTree.ROOT_FOLDER_NAME] = iCloudFolderInfo(self.drive.trash)
+        threadname = threading.current_thread().name
+        if executor:
+            threading.current_thread().name = f"process_folder {name} {path}"
+
+        #if name == "root":
+        #    if self._root == {}:
+        #        logger.debug(f"resolving iCloud Drive {name}")
+        #        self._root[BaseTree.ROOT_FOLDER_NAME] = iCloudFolderInfo(self.drive.root)
+        #elif name == "trash":
+        #    if self._trash == {}:
+        #        logger.debug(f"resolving iCloud Drive {name}")
+        #        self._trash[BaseTree.ROOT_FOLDER_NAME] = iCloudFolderInfo(self.drive.trash)
 
         path = BaseTree.ROOT_FOLDER_NAME if path is None or path == "" else path
         relative_path = os.path.normpath(path)
         futures = []
-        threadname = threading.current_thread().name
-        if executor:
-            threading.current_thread().name = f"process_folder {name} {path}"
 
         children = root[path].node.get_children(force=force)
         for child in children:
@@ -144,6 +148,7 @@ class iCloudTree(BaseTree):
                 parent_node.upload(f, mtime=lfi.modified_time.timestamp(), ctime=lfi.created_time.timestamp())
             return UploadActionResult(success=True)
         except Exception as e:
+            logger.error(f"Exception in upload {e}")
             self.handle_drive_exception(e)
             return UploadActionResult(success=False, path=path, fn=self.upload, args=[str, lfi], exception=e)
 
@@ -164,6 +169,7 @@ class iCloudTree(BaseTree):
             return DownloadActionResult(success=True)
 
         except Exception as e:
+            logger.error(f"Exception in download {e}")
             self.handle_drive_exception(e)
             return DownloadActionResult(success=False, path=path, fn=self.upload, args=[path, cfi, apply_after], exception=e)
 
@@ -188,14 +194,13 @@ class iCloudTree(BaseTree):
             parent = self._root[_path]
             return parent
         except Exception as e:
+            logger.error(f"Exception in create_icloud_folders {e}")
             self.handle_drive_exception(e)
 
     @property
     def root_count(self) -> int:
-        if self._root is None:
-            return 0
         return self._root[BaseTree.ROOT_FOLDER_NAME].node.data.get('fileCount')
-    
+
     def has_root_filecount_changed(self) -> bool:
         name = threading.current_thread().name
         threading.current_thread().name = "check root change"
@@ -216,10 +221,8 @@ class iCloudTree(BaseTree):
     
     @property
     def trash_count(self) -> int:
-        if self._trash is None:
-            return 0
         return self._trash[BaseTree.ROOT_FOLDER_NAME].node.data.get('numberOfItems')
-    
+ 
     def has_trash_numberOfItems_changed(self) -> bool:
         name = threading.current_thread().name
         threading.current_thread().name = "check trash change"
