@@ -1,5 +1,6 @@
 import os
 import logging
+import traceback
 from typing import Callable, override 
 from urllib3 import disable_warnings
 from urllib3.exceptions import InsecureRequestWarning
@@ -60,13 +61,18 @@ class iCloudTree(BaseTree):
             if self.root_count != root_files_count + trash_files_count:
                 raise iCloudMismatchException(f"Mismatch root_count: {self.root_count} != root_files_count: {root_files_count} + trash_files_count: {trash_files_count}")
             
+        except RuntimeError as e:
+            logger.error(f"RuntimeError in refresh {e}")
+            self.handle_drive_exception(e)
+            succeeded = False
+
         except Exception as e:
             logger.error(f"Exception in refresh {e}")
             self.handle_drive_exception(e)
             succeeded = False
 
         logger.debug(f"Refresh iCloud Drive complete root has {len(self._root)} items, root count {self.root_count}, {sum(1 for _ in self.folders(self._root))} folders, {sum(1 for _ in self.files(self._root))} files")
-        logger.debug(f"Refresh iCloud Drive complete trash has {len(self._trash)} items, trash count {self.trash_count}, {sum(1 for _ in self.folders(self._trash))} folders, {sum(1 for _ in self.folders(self._trash))} files")
+        logger.debug(f"Refresh iCloud Drive complete trash has {len(self._trash)} items, trash count {self.trash_count}, {sum(1 for _ in self.folders(self._trash))} folders, {sum(1 for _ in self.files(self._trash))} files")
         self._remove_ignored_items()
         return succeeded
 
@@ -93,18 +99,8 @@ class iCloudTree(BaseTree):
     def process_folder(self, root=None, path=None, force=False, recursive=True, ignore=True, executor=None) -> None|list[Future]:
         threadname = threading.current_thread().name
         if executor:
-            threading.current_thread().name = f"process_folder {"root" if root == self._root else "trash"} {path}"
+            threading.current_thread().name = f"process_folder {"root" if root is self._root else "trash"} {path}"
 
-        #if name == "root":
-        #    if self._root == {}:
-        #        logger.debug(f"resolving iCloud Drive {name}")
-        #        self._root[BaseTree.ROOT_FOLDER_NAME] = iCloudFolderInfo(self.drive.root)
-        #elif name == "trash":
-        #    if self._trash == {}:
-        #        logger.debug(f"resolving iCloud Drive {name}")
-        #        self._trash[BaseTree.ROOT_FOLDER_NAME] = iCloudFolderInfo(self.drive.trash)
-
-        #path = BaseTree.ROOT_FOLDER_NAME if path is None or path == "" else path
         relative_path = os.path.normpath(path)
         futures = []
 
@@ -115,7 +111,7 @@ class iCloudTree(BaseTree):
                 continue
             if child.type == "folder":
                     cfi = root[_path] = iCloudFolderInfo(child)
-                    logger.debug(f"iCloud Drive {"root" if root == self._root else "trash"} {_path} {cfi}")
+                    logger.debug(f"iCloud Drive {"root" if root is self._root else "trash"} {_path} {cfi}")
                     if recursive:
                         if executor is not None:
                             future = executor.submit(self.process_folder, root, _path, force, recursive, ignore, executor)
@@ -126,9 +122,9 @@ class iCloudTree(BaseTree):
                 cfi = root[_path] = iCloudFileInfo(child)
                 # Update parent folder modified time to be that of the newest child (not stored in iCloud Drive)
                 #root[relative_path].modified_time = cfi.modified_time if cfi.modified_time > root[relative_path].modified_time else root[relative_path].modified_time
-                logger.debug(f"iCloud Drive {"root" if root == self._root else "trash"} {_path} {cfi}")
+                logger.debug(f"iCloud Drive {"root" if root is self._root else "trash"} {_path} {cfi}")
             else:
-                logger.debug(f"iCloud Drive {"root" if root == self._root else "trash"} did not process {child.type} {os.path.join(relative_path, child.name)}")
+                logger.debug(f"iCloud Drive {"root" if root is self._root else "trash"} did not process {child.type} {os.path.join(relative_path, child.name)}")
     
         threading.current_thread().name = threadname
         return futures
@@ -244,10 +240,11 @@ class iCloudTree(BaseTree):
     def handle_drive_exception(self, e: Exception) -> None:
         match e:
             case PyiCloudAPIResponseException():
-                logger.error(f"iCloud Drive exception: {e}")
+                logger.error(f"iCloud Drive Exception: {e}")
                 self._is_authenticated = False
             case iCloudMismatchException():
                 logger.error(f"iCloud Drive iCloudMismatchException in refresh: {e}")
             case _:
-                logger.error(f"iCloud Drive unhandled exception: {e}")
+                logger.error(f"iCloud Drive unhandled Exception: {e}")
+                logger.error(traceback.format_exc())
     

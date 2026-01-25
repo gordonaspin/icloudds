@@ -158,10 +158,10 @@ class EventHandler(RegexMatchingEventHandler):
                     self._pending.update(result)
                 elif isinstance(result, DownloadActionResult):
                     if result.success == False:
-                        logger.debug(f"Download failed for {result.path} with exception {result.exception}")
+                        logger.debug(f"Download failed for {result.path} with Exception {result.exception}")
                 elif isinstance(result, UploadActionResult):
                     if result.success == False:
-                        logger.debug(f"Upload failed for {result.path} with exception {result.exception}")
+                        logger.debug(f"Upload failed for {result.path} with Exception {result.exception}")
 
     def _dump_state(self, local: LocalTree, icloud: iCloudTree, refresh: iCloudTree=None):
         filename = "_before.log"
@@ -261,9 +261,9 @@ class EventHandler(RegexMatchingEventHandler):
 
     def _retry_exception_events(self) -> None:
         if self._exception_events:
-            logger.debug(f"Reprocessing {len(self._exception_events)} exception events...")
+            logger.debug(f"Reprocessing {len(self._exception_events)} events...")
             for event in list(self._exception_events):
-                logger.debug(f"Reprocessing exception event: {event}")
+                logger.debug(f"Reprocessing event: {event}")
                 self._exception_events.remove(event)
                 self._event_table.get(type(event), lambda e: logger.debug(f"Unhandled event {e}"))(event)
 
