@@ -47,7 +47,7 @@ class iCloudTree(BaseTree):
                 for (_root, name, icf) in [(self._root, "root", iCloudFolderInfo(self.drive.root)), (self._trash, "trash", iCloudFolderInfo(self.drive.trash))]:
                     logger.debug(f"Refreshing iCloud Drive {name}...")
                     _root[BaseTree.ROOT_FOLDER_NAME] = icf
-                    future = executor.submit(self.process_folder, root=_root, name=name, path=None, force=True, recursive=True, ignore=False, executor=executor)
+                    future = executor.submit(self.process_folder, root=_root, path=BaseTree.ROOT_FOLDER_NAME, force=True, recursive=True, ignore=False, executor=executor)
                     pending = pending | set([future])
                 while pending:
                     done, pending = as_completed(pending), set()
@@ -90,10 +90,10 @@ class iCloudTree(BaseTree):
     def trash(self) -> dict:
         return self._trash
 
-    def process_folder(self, root=None, name=None, path=None, force=False, recursive=True, ignore=True, executor=None) -> None|list[Future]:
+    def process_folder(self, root=None, path=None, force=False, recursive=True, ignore=True, executor=None) -> None|list[Future]:
         threadname = threading.current_thread().name
         if executor:
-            threading.current_thread().name = f"process_folder {name} {path}"
+            threading.current_thread().name = f"process_folder {"root" if root == self._root else "trash"} {path}"
 
         #if name == "root":
         #    if self._root == {}:
@@ -104,7 +104,7 @@ class iCloudTree(BaseTree):
         #        logger.debug(f"resolving iCloud Drive {name}")
         #        self._trash[BaseTree.ROOT_FOLDER_NAME] = iCloudFolderInfo(self.drive.trash)
 
-        path = BaseTree.ROOT_FOLDER_NAME if path is None or path == "" else path
+        #path = BaseTree.ROOT_FOLDER_NAME if path is None or path == "" else path
         relative_path = os.path.normpath(path)
         futures = []
 
@@ -115,10 +115,10 @@ class iCloudTree(BaseTree):
                 continue
             if child.type == "folder":
                     cfi = root[_path] = iCloudFolderInfo(child)
-                    logger.debug(f"iCloud Drive {name} {_path} {cfi}")
+                    logger.debug(f"iCloud Drive {"root" if root == self._root else "trash"} {_path} {cfi}")
                     if recursive:
                         if executor is not None:
-                            future = executor.submit(self.process_folder, root, name, _path, force, recursive, ignore, executor)
+                            future = executor.submit(self.process_folder, root, _path, force, recursive, ignore, executor)
                             futures.append(future)
                         else:
                             self.process_folder(root, _path, force, recursive, ignore, executor)
@@ -126,9 +126,9 @@ class iCloudTree(BaseTree):
                 cfi = root[_path] = iCloudFileInfo(child)
                 # Update parent folder modified time to be that of the newest child (not stored in iCloud Drive)
                 #root[relative_path].modified_time = cfi.modified_time if cfi.modified_time > root[relative_path].modified_time else root[relative_path].modified_time
-                logger.debug(f"iCloud Drive {name} {_path} {cfi}")
+                logger.debug(f"iCloud Drive {"root" if root == self._root else "trash"} {_path} {cfi}")
             else:
-                logger.debug(f"iCloud Drive {name} did not process {child.type} {os.path.join(relative_path, child.name)}")
+                logger.debug(f"iCloud Drive {"root" if root == self._root else "trash"} did not process {child.type} {os.path.join(relative_path, child.name)}")
     
         threading.current_thread().name = threadname
         return futures

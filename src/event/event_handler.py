@@ -308,7 +308,7 @@ class EventHandler(RegexMatchingEventHandler):
                 if isinstance(lfi, LocalFileInfo):
                     logger.info(f"Local file {event.src_path} modified/created, uploading to iCloud Drive...")
                     self._icloud.upload(event.src_path, lfi)
-                self._icloud.process_folder(root=self._icloud.root, name="root", path=parent_path, force=True, recursive=False)
+                self._icloud.process_folder(root=self._icloud.root, path=parent_path, force=True, recursive=False)
         except Exception as e:
             logger.error(f"iCloud Drive upload failed for {event.src_path}: {e}")
             self._icloud.handle_drive_exception(e)
@@ -328,7 +328,7 @@ class EventHandler(RegexMatchingEventHandler):
             # Add the file back with the new name
             try:
                 cfi.node.rename(os.path.basename(event.dest_path))
-                self._pending.update(self._icloud.process_folder(root=self._icloud.root, name="root", path=dest_parent_path, force=True, executor=self._threadpool))
+                self._pending.update(self._icloud.process_folder(root=self._icloud.root, path=dest_parent_path, force=True, executor=self._threadpool))
                 self._local.add(event.dest_path)
             except Exception as e:
                 logger.error(f"iCloud Drive rename failed for {event.src_path} to {event.dest_path}: {e}")
@@ -388,7 +388,7 @@ class EventHandler(RegexMatchingEventHandler):
                 parent_node: DriveNode = parent.node
                 logger.info(f"Local folder {event.src_path} created, iCloud Drive creating folder {event.src_path}...")
                 parent_node.mkdir(os.path.basename(event.src_path))
-                self._icloud.process_folder(root=self._icloud.root, name="root", path=parent_path, force=True, recursive=False)
+                self._icloud.process_folder(root=self._icloud.root, path=parent_path, force=True, recursive=False)
             else:
                 logger.debug(f"iCloud Drive folder {event.src_path} already exists, skipping creation...")
         except Exception as e:
