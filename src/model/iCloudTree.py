@@ -46,7 +46,7 @@ class iCloudTree(BaseTree):
             with ThreadPoolExecutor(os.cpu_count()*4) as executor:
                 pending = set()
                 for (_root, name, icf) in [(self._root, "root", iCloudFolderInfo(self.drive.root)), (self._trash, "trash", iCloudFolderInfo(self.drive.trash))]:
-                    logger.debug(f"Refreshing iCloud Drive {name}...")
+                    logger.debug(f"Refreshing iCloud Drive {icf.drivewsid} ...")
                     _root[BaseTree.ROOT_FOLDER_NAME] = icf
                     future = executor.submit(self.process_folder, root=_root, path=BaseTree.ROOT_FOLDER_NAME, force=True, recursive=True, ignore=False, executor=executor)
                     pending = pending | set([future])
@@ -60,11 +60,6 @@ class iCloudTree(BaseTree):
             trash_files_count = sum(1 for _ in self.files(self._trash))
             if self.root_count != root_files_count + trash_files_count:
                 raise iCloudMismatchException(f"Mismatch root_count: {self.root_count} != root_files_count: {root_files_count} + trash_files_count: {trash_files_count}")
-            
-        except RuntimeError as e:
-            logger.error(f"RuntimeError in refresh {e}")
-            self.handle_drive_exception(e)
-            succeeded = False
 
         except Exception as e:
             logger.error(f"Exception in refresh {e}")
@@ -75,7 +70,6 @@ class iCloudTree(BaseTree):
         logger.debug(f"Refresh iCloud Drive complete trash has {len(self._trash)} items, trash count {self.trash_count}, {sum(1 for _ in self.folders(self._trash))} folders, {sum(1 for _ in self.files(self._trash))} files")
         self._remove_ignored_items()
         return succeeded
-
 
     @override
     def add(self, path) -> iCloudFileInfo | iCloudFolderInfo:
@@ -91,10 +85,6 @@ class iCloudTree(BaseTree):
         elif stat_entry.is_dir():
             self._root[path] = iCloudFolderInfo(name=os.path.basename(path), stat_entry=stat_entry)
         return self._root[path]
-
-    @property
-    def trash(self) -> dict:
-        return self._trash
 
     def process_folder(self, root=None, path=None, force=False, recursive=True, ignore=True, executor=None) -> None|list[Future]:
         threadname = threading.current_thread().name
@@ -195,9 +185,13 @@ class iCloudTree(BaseTree):
 
     @property
     def root_count(self) -> int:
-        return self._root[BaseTree.ROOT_FOLDER_NAME].node.data.get('fileCount')
+        return self._root[BaseTree.ROOT_FOLDER_NAME].file_count
 
-    def has_root_filecount_changed(self) -> bool:
+    @property
+    def trash_count(self) -> int:
+        return self._trash[BaseTree.ROOT_FOLDER_NAME].number_of_items
+    
+    def root_has_changed(self) -> bool:
         name = threading.current_thread().name
         threading.current_thread().name = "check root change"
         pre_count: int = 0
@@ -205,6 +199,8 @@ class iCloudTree(BaseTree):
         try:
             pre_count = self.root_count
             logger.debug(f"iCloud Drive root has {pre_count} files before refresh")
+            # This is a hack to get refreshed node info without replacing the node object in pyicloud
+            # and having to reload the entire tree
             post_count = self.drive.get_node_data(CLOUD_DOCS_ZONE_ID_ROOT).get('fileCount')
             self.drive._root.data['fileCount'] = post_count
             logger.debug(f"iCloud Drive root has {post_count} files after refresh")
@@ -214,12 +210,8 @@ class iCloudTree(BaseTree):
         finally:
             threading.current_thread().name = name
         return pre_count != post_count            
-    
-    @property
-    def trash_count(self) -> int:
-        return self._trash[BaseTree.ROOT_FOLDER_NAME].node.data.get('numberOfItems')
  
-    def has_trash_numberOfItems_changed(self) -> bool:
+    def trash_has_changed(self) -> bool:
         name = threading.current_thread().name
         threading.current_thread().name = "check trash change"
         pre_count: int = 0
@@ -227,6 +219,8 @@ class iCloudTree(BaseTree):
         try:
             pre_count = self.trash_count
             logger.debug(f"iCloud Drive trash has {pre_count} items before refresh")
+            # This is a hack to get refreshed node info without replacing the node object in pyicloud
+            # and having to reload the entire tree
             post_count = self.drive.get_node_data(CLOUD_DOCS_ZONE_ID_TRASH).get('numberOfItems')
             self.drive._trash.data['numberOfItems'] = post_count
             logger.debug(f"iCloud Drive trash has {post_count} items after refresh")
@@ -241,6 +235,7 @@ class iCloudTree(BaseTree):
         match e:
             case PyiCloudAPIResponseException():
                 logger.error(f"iCloud Drive Exception: {e}")
+                logger.error(traceback.format_exc())
                 self._is_authenticated = False
             case iCloudMismatchException():
                 logger.error(f"iCloud Drive iCloudMismatchException in refresh: {e}")

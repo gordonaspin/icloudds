@@ -69,8 +69,6 @@ class EventHandler(RegexMatchingEventHandler):
         refresh_future: Future = None
         root_has_changed: bool = False
         trash_has_changed: bool = False
-        root_changed_future: Future = None
-        trash_changed_future: Future = None
 
         self._local.refresh()
         if self._icloud.refresh():
@@ -116,14 +114,13 @@ class EventHandler(RegexMatchingEventHandler):
                     # Don't check for updates if the refresh thread is running
                     if refresh_future:
                         continue
-                    futures: list[Future] = []
+                    root_changed_future: Future = None
+                    trash_changed_future: Future = None
                     if not root_has_changed:
-                        root_changed_future = self._threadpool.submit(self._icloud.has_root_filecount_changed)
-                        futures.append(root_changed_future)
+                        root_changed_future = self._threadpool.submit(self._icloud.root_has_changed)
                     if not trash_has_changed:
-                        trash_changed_future = self._threadpool.submit(self._icloud.has_trash_numberOfItems_changed)
-                        futures.append(trash_changed_future)
-                    wait(futures)
+                        trash_changed_future = self._threadpool.submit(self._icloud.trash_has_changed)
+                    wait([f for f in [root_changed_future, trash_changed_future] if f is not None])
                     root_has_changed = root_changed_future.result()
                     trash_has_changed = trash_changed_future.result()
                     if datetime.now() - refresh_dt > icloud_refresh_period or root_has_changed or trash_has_changed:
@@ -157,10 +154,10 @@ class EventHandler(RegexMatchingEventHandler):
                 if isinstance(result, list) and all(isinstance(f, future) for f in result):
                     self._pending.update(result)
                 elif isinstance(result, DownloadActionResult):
-                    if result.success == False:
+                    if not result.success:
                         logger.debug(f"Download failed for {result.path} with Exception {result.exception}")
                 elif isinstance(result, UploadActionResult):
-                    if result.success == False:
+                    if not result.success:
                         logger.debug(f"Upload failed for {result.path} with Exception {result.exception}")
 
     def _dump_state(self, local: LocalTree, icloud: iCloudTree, refresh: iCloudTree=None):

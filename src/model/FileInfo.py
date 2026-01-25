@@ -5,7 +5,7 @@ import platform
 from dataclasses import dataclass, InitVar
 from datetime import datetime, timezone, timedelta
 
-from pyicloud.services.drive import DriveNode, _date_to_utc
+from pyicloud.services.drive import DriveNode, _date_to_utc, CLOUD_DOCS_ZONE_ID_ROOT, NODE_TRASH
 
 class BaseInfo:
     def _round_seconds(self, obj: datetime) -> datetime:
@@ -56,9 +56,25 @@ class iCloudFolderInfo(FolderInfo):
     @override
     @property
     def name(self) -> str:
-        if self.node.name == "root" or self.node.name == "TRASH_ROOT":
+        if self.drivewsid == CLOUD_DOCS_ZONE_ID_ROOT or self.drivewsid == NODE_TRASH:
             return "."
         return self.node.name
+    
+    @property
+    def drivewsid(self) -> str:
+        return self.node.data['drivewsid']
+    
+    @property
+    def file_count(self) -> int:
+        return self.node.data['fileCount']
+    
+    @property
+    def direct_children_count(self) -> int:
+        return self.node.data['directChildrenCount']
+    
+    @property
+    def number_of_items(self) -> int:
+        return self.node.data['numberOfItems']
 
     @override
     def __repr__(self):

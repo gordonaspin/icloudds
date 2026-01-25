@@ -43,8 +43,12 @@ class BaseTree():
         self._includes_list.extend(includes or [])
 
     @property
-    def root(self) -> BaseInfo:
+    def root(self) -> ThreadSafeDict:
         return self._root
+    
+    @property
+    def trash(self) -> ThreadSafeDict:
+        return self._trash
     
     @property
     def root_path(self) -> str:
@@ -98,7 +102,7 @@ class BaseTree():
         for key, value in root.items():
             if isinstance(value, FileInfo):
                 path = os.path.dirname(key)
-                path = BaseTree.ROOT_FOLDER_NAME if path == "" else path
+                path = BaseTree.ROOT_FOLDER_NAME if not path else path
                 yield root[path], key, value
 
     def folders(self, root) -> Iterator[tuple[str, str, BaseInfo]]:
@@ -109,5 +113,5 @@ class BaseTree():
         for key, value in root.items():
             if isinstance(value, FolderInfo):
                 path = os.path.dirname(key)
-                path = BaseTree.ROOT_FOLDER_NAME if path == "" else path
+                path = BaseTree.ROOT_FOLDER_NAME if not path else path
                 yield root[path], key, value
