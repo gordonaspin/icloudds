@@ -6,6 +6,8 @@ import logging
 import logging.config
 import pathlib
 import sys
+import threading
+import traceback
 from typing import override
 from context import Context
 import constants as constants
@@ -31,8 +33,48 @@ def setup_logging(logging_config: str) -> str:
     if queue_handler is not None:
         queue_handler.listener.start()
         atexit.register(queue_handler.listener.stop)
-    
+
+    sys.excepthook = handle_unhandled_exception
+    threading.excepthook = handle_thread_exception
+    logging.getLogger().info("logging configured")
+
     return folder_path
+
+def handle_unhandled_exception(exc_type, exc_value, exc_traceback):
+    """
+    Handler for unhandled exceptions that will write to the logs.
+    """
+    # Check if it's a KeyboardInterrupt and call the default hook if it is
+    # This allows the program to exit normally with Ctrl+C
+    if issubclass(exc_type, KeyboardInterrupt):
+        sys.__excepthook__(exc_type, exc_value, exc_traceback)
+        return
+
+    # Log the exception with the traceback
+    # Using logger.exception() is a shortcut that automatically adds exc_info
+    logger = logging.getLogger("unhandled")
+    func = None
+    if logger:
+        func = logger.critical
+    else:
+        func = print
+    func("**** Unhandled exception occurred ****", exc_info=(exc_type, exc_value, exc_traceback))
+
+def handle_thread_exception(args):
+    """
+    Custom exception hook to handle uncaught exceptions in threads.
+    """
+    logger = logging.getLogger("unhandled")
+    func = None
+    if logger:
+        func = logger.critical
+    else:
+        func = print
+
+    func(f"**** Exception caught in thread: {args.thread.name} ****")
+    func(f"Exception type: {args.exc_type.__name__}")
+    func(f"Exception value: {args.exc_value}")
+    func(traceback.format_exc())
 
 LOG_RECORD_BUILTIN_ATTRS = {
     "args",

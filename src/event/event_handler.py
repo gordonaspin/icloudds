@@ -115,15 +115,11 @@ class EventHandler(RegexMatchingEventHandler):
                     # Don't check for updates if the refresh thread is running
                     if refresh_future:
                         continue
-                    root_changed_future: Future = None
-                    trash_changed_future: Future = None
-                    if not root_has_changed:
-                        root_changed_future = self._threadpool.submit(self._icloud.root_has_changed)
-                    if not trash_has_changed:
-                        trash_changed_future = self._threadpool.submit(self._icloud.trash_has_changed)
+                    root_changed_future: Future = None if root_has_changed else self._threadpool.submit(self._icloud.root_has_changed)
+                    trash_changed_future: Future = None if trash_has_changed else self._threadpool.submit(self._icloud.trash_has_changed)
                     wait([f for f in [root_changed_future, trash_changed_future] if f is not None])
-                    root_has_changed = root_changed_future.result()
-                    trash_has_changed = trash_changed_future.result()
+                    root_has_changed = root_changed_future.result() if root_changed_future else root_has_changed
+                    trash_has_changed = trash_changed_future.result() if trash_changed_future else trash_has_changed
                     if datetime.now() - refresh_dt > icloud_refresh_period or root_has_changed or trash_has_changed:
                         if datetime.now() - refresh_dt > icloud_refresh_period:
                             logger.debug("refresh period elapsed")
@@ -185,13 +181,14 @@ class EventHandler(RegexMatchingEventHandler):
             if name == BaseTree.ROOT_FOLDER_NAME:
                 continue
             path = self._icloud.trash[name].node.data.get("restorePath")
-            self._delete_local_file(path)
+            if path:
+                self._delete_local_file(path)
 
     def _delete_local_file(self, path: str):
         self._suppressed_paths.add(path)
-        fs_object_path = os.path.join(self._absolute_directory, path)
         lfi = self._local.root.get(path, None)
         if lfi is not None:
+            fs_object_path = os.path.join(self._absolute_directory, path)
             if isinstance(lfi, LocalFolderInfo):
                 logger.info(f"deleting local folder {path}")
                 shutil.rmtree(fs_object_path, ignore_errors=True, onexc=None)

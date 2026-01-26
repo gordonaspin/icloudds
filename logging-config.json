@@ -40,6 +40,13 @@
     }
   },
   "loggers": {
+    "unhandled": {
+      "level": "DEBUG",
+      "handlers": [
+        "stderr",
+        "file"
+      ]
+    },
     "icloudds": {
       "level": "DEBUG",
       "handlers": [
