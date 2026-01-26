@@ -45,7 +45,7 @@ class iCloudTree(BaseTree):
             logger.debug(f"Refreshing iCloud Drive {self.ctx.username}::{self.drive.service_root}...")
             with ThreadPoolExecutor(os.cpu_count()*4) as executor:
                 pending = set()
-                for (_root, name, icf) in [(self._root, "root", iCloudFolderInfo(self.drive.root)), (self._trash, "trash", iCloudFolderInfo(self.drive.trash))]:
+                for (_root, icf) in [(self._root, iCloudFolderInfo(self.drive.root)), (self._trash, iCloudFolderInfo(self.drive.trash))]:
                     logger.debug(f"Refreshing iCloud Drive {icf.drivewsid} ...")
                     _root[BaseTree.ROOT_FOLDER_NAME] = icf
                     future = executor.submit(self.process_folder, root=_root, path=BaseTree.ROOT_FOLDER_NAME, force=True, recursive=True, ignore=False, executor=executor)

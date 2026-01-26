@@ -106,7 +106,8 @@ class EventHandler(RegexMatchingEventHandler):
                         root_has_changed = trash_has_changed = False
                         icloud_refresh_period = self.ctx.icloud_refresh_period
                     else:
-                        icloud_refresh_period = min(self.ctx.icloud_refresh_period * 12, icloud_refresh_period * 2)
+                        if not(root_has_changed or trash_has_changed):
+                            icloud_refresh_period = min(self.ctx.icloud_refresh_period * 6, icloud_refresh_period + self.ctx.icloud_refresh_period)
                         logger.debug(f"Background refresh was inconsisent, will retry in {icloud_refresh_period}")
                     refresh_future = None
 
