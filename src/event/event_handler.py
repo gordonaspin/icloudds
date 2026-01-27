@@ -97,9 +97,12 @@ class EventHandler(RegexMatchingEventHandler):
                     refresh_dt = datetime.now() 
                     result = refresh_future.result()
                     if result:
-                        logger.info(f"Background refresh complete")
                         self._dump_state(local=self._local, icloud=self._icloud)
-                        self._apply_icloud_refresh(refresh)
+                        result = self._apply_icloud_refresh(refresh)
+                        if any(result):
+                            logger.info(f"Background refresh applied, {result[0]} uploaded, {result[1]} downloaded, {result[2]} deleted")
+                        else:
+                            logger.info(f"Background refresh, no changes")
                         self._dump_state(local=self._local, icloud=self._icloud, refresh=refresh)
                         self._icloud = refresh
                         root_has_changed = trash_has_changed = False
@@ -166,20 +169,25 @@ class EventHandler(RegexMatchingEventHandler):
                     for k, v in sorted_dict.items():
                         f.write(f"{k}: {v!r}\n")
 
-    def _apply_icloud_refresh(self, refresh: iCloudTree) -> None:
-        self._sync_icloud(self._icloud, refresh)
-        self._sync_common(self._icloud, refresh)
+    def _apply_icloud_refresh(self, refresh: iCloudTree) -> tuple[int, int, int]:
+        downloaded: int = self._sync_icloud(self._icloud, refresh)
+        common: tuple[int, int] = self._sync_common(self._icloud, refresh)
         deleted = self._icloud.root.keys() - refresh.root.keys()
         for path in deleted:
             self._delete_local_file(path)
+        return (common[0], downloaded + common[1], len(deleted))
 
-    def _delete_icloud_trash_items(self):
+    def _delete_icloud_trash_items(self) -> int:
+        deleted_count = 0
         for name in self._icloud.trash:
             if name == BaseTree.ROOT_FOLDER_NAME:
                 continue
             path = self._icloud.trash[name].node.data.get("restorePath")
             if path:
                 self._delete_local_file(path)
+                if (isinstance(self._local.root[path]), LocalFileInfo):
+                    deleted_count += 1
+        return deleted_count
 
     def _delete_local_file(self, path: str):
         self._suppressed_paths.add(path)
@@ -195,8 +203,9 @@ class EventHandler(RegexMatchingEventHandler):
                     os.remove(fs_object_path)
             self._local.root.pop(path)
 
-    def _sync_local_to_icloud(self) -> None:
-        only_in_local = self._local.root.keys() - self._icloud.root.keys()        
+    def _sync_local_to_icloud(self) -> int:
+        only_in_local = self._local.root.keys() - self._icloud.root.keys()
+        uploaded_count = 0
         for path in only_in_local:
             if self._icloud.ignore(path, isinstance(self._local.root[path], LocalFolderInfo)):
                 continue
@@ -205,10 +214,13 @@ class EventHandler(RegexMatchingEventHandler):
                 self._handle_dir_created(DirCreatedEvent(src_path=path))
             else:
                 self._handle_file_modified(FileModifiedEvent(src_path=path))
+                uploaded_count +=1
+        return uploaded_count
 
-    def _sync_icloud(self, these: LocalTree | iCloudTree, those: iCloudTree) -> None:
+    def _sync_icloud(self, these: LocalTree | iCloudTree, those: iCloudTree) -> int:
         left = "Local" if isinstance(these, LocalTree) else "iCloud"
         right = "Refresh" if left == "iCloud" else "iCloud"
+        downloaded_count = 0
         in_icloud = those.root.keys() - these.root.keys()
         for path in in_icloud:
             if self._local.ignore(path, isinstance(those.root[path], iCloudFolderInfo)):
@@ -223,13 +235,17 @@ class EventHandler(RegexMatchingEventHandler):
                 else:
                     logger.info(f"{right} {path} is missing locally, downloading to Local...")
                     self._pending.add(self._threadpool.submit(self._icloud.download, path, cfi, self._local.add))
+                    downloaded_count += 1
             except Exception as e:
                 logger.error(f"iCloud Drive download failed for {path}: {e}")
                 self._icloud.handle_drive_exception(e)
+        return downloaded_count
 
-    def _sync_common(self, these: LocalTree | iCloudTree, those: iCloudTree) -> None:
+    def _sync_common(self, these: LocalTree | iCloudTree, those: iCloudTree) -> tuple[int, int]:
         left = "Local" if isinstance(these, LocalTree) else "iCloud"
         right = "Refresh" if left == "iCloud" else "iCloud"
+        downloaded_count = 0
+        uploaded_count = 0
         in_common = these.root.keys() & those.root.keys()
         for path in in_common:
             lfi = these.root[path]
@@ -243,13 +259,16 @@ class EventHandler(RegexMatchingEventHandler):
                 if lfi.modified_time > cfi.modified_time and isinstance(lfi, LocalFileInfo):
                     logger.debug(f"{left} is newer for {path}, uploading to iCloud Drive...")
                     self._handle_file_modified(FileModifiedEvent(src_path=path))
+                    uploaded_count += 1
                 elif lfi.modified_time < cfi.modified_time:
                     logger.info(f"{right} is newer for {path}, downloading to Local...")
                     self._suppressed_paths.add(path)
                     self._pending.add(self._threadpool.submit(those.download, path, cfi, self._local.add))
+                    downloaded_count += 1
             else:   
                 if lfi.size != cfi.size:
                     logger.debug(f"Different size in both: {path} -> {left}: {lfi} | {right}: {cfi}")
+        return (uploaded_count, downloaded_count)
 
     def _retry_exception_events(self) -> None:
         if self._exception_events:
