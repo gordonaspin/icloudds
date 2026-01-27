@@ -84,7 +84,6 @@ class EventHandler(RegexMatchingEventHandler):
             try:
                 while True:
                     event: QueuedEvent = self._queue.get(block=True, timeout=10)
-                    logger.debug(f"Dequeueing: {event}")
                     event_collector.append(event)
             except Empty:
                 self._suppressed_paths.clear()
@@ -98,7 +97,7 @@ class EventHandler(RegexMatchingEventHandler):
                     refresh_dt = datetime.now() 
                     result = refresh_future.result()
                     if result:
-                        logger.debug(f"Background refresh complete")
+                        logger.info(f"Background refresh complete")
                         self._dump_state(local=self._local, icloud=self._icloud)
                         self._apply_icloud_refresh(refresh)
                         self._dump_state(local=self._local, icloud=self._icloud, refresh=refresh)
@@ -108,7 +107,7 @@ class EventHandler(RegexMatchingEventHandler):
                     else:
                         if not(root_has_changed or trash_has_changed):
                             icloud_refresh_period = min(self.ctx.icloud_refresh_period * 6, icloud_refresh_period + self.ctx.icloud_refresh_period)
-                        logger.debug(f"Background refresh was inconsisent, will retry in {icloud_refresh_period}")
+                        logger.warning(f"Background refresh was inconsisent, will retry in {icloud_refresh_period}")
                     refresh_future = None
 
                 if datetime.now() - refresh_dt > icloud_check_period:
@@ -134,13 +133,11 @@ class EventHandler(RegexMatchingEventHandler):
         if not event_collector:
             return
         events: list[QueuedEvent] = self._coalesce_events(event_collector)
-        logger.debug(f"Processing {len(events)} coalesced events...")
         for qe in events:
             event: FileSystemEvent = qe.event
             if self._local.ignore(event.src_path, event.is_directory) or self._icloud.ignore(event.src_path, event.is_directory):
                 continue
-            logger.debug(f"Dispatching {event}")
-            self._event_table.get(type(event), lambda e: logger.debug(f"Unhandled event {e}"))(event)
+            self._event_table.get(type(event), lambda e: logger.warning(f"Unhandled event {e}"))(event)
         event_collector.clear()
 
     def _process_pending(self):
@@ -152,10 +149,10 @@ class EventHandler(RegexMatchingEventHandler):
                     self._pending.update(result)
                 elif isinstance(result, DownloadActionResult):
                     if not result.success:
-                        logger.debug(f"Download failed for {result.path} with Exception {result.exception}")
+                        logger.error(f"Download failed for {result.path} with Exception {result.exception}")
                 elif isinstance(result, UploadActionResult):
                     if not result.success:
-                        logger.debug(f"Upload failed for {result.path} with Exception {result.exception}")
+                        logger.error(f"Upload failed for {result.path} with Exception {result.exception}")
 
     def _dump_state(self, local: LocalTree, icloud: iCloudTree, refresh: iCloudTree=None):
         filename = "_before.log"

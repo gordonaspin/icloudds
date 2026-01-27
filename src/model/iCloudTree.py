@@ -62,7 +62,6 @@ class iCloudTree(BaseTree):
                 raise iCloudMismatchException(f"Mismatch root_count: {self.root_count} != root_files_count: {root_files_count} + trash_files_count: {trash_files_count}")
 
         except Exception as e:
-            logger.error(f"Exception in refresh {e}")
             self.handle_drive_exception(e)
             succeeded = False
 
@@ -234,11 +233,11 @@ class iCloudTree(BaseTree):
     def handle_drive_exception(self, e: Exception) -> None:
         match e:
             case PyiCloudAPIResponseException():
-                logger.error(f"iCloud Drive Exception: ({e.__class__.__name__}) {e}")
-                logger.error(traceback.format_exc())
+                logger.warning(f"iCloud Drive Exception: ({e.__class__.__name__}) {e}")
+                logger.warning(traceback.format_exc())
                 self._is_authenticated = False
             case iCloudMismatchException():
-                logger.error(f"iCloud Drive Exception: ({e.__class__.__name__}) in refresh: {e}")
+                logger.debug(f"iCloud Drive Exception: ({e.__class__.__name__}) in refresh: {e}")
             case _:
                 logger.error(f"iCloud Drive unhandled Exception: ({e.__class__.__name__}) {e}")
                 logger.error(traceback.format_exc())
