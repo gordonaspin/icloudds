@@ -5,7 +5,7 @@ from collections.abc import Iterator
 from collections import UserDict
 from threading import Lock
 
-from model.FileInfo import BaseInfo, FileInfo, FolderInfo
+from model.file_info import BaseInfo, FileInfo, FolderInfo
 
 logger = logging.getLogger(__name__)
 

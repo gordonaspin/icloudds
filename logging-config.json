@@ -55,7 +55,7 @@
       ]
     },
     "icloud": {
-      "level": "DEBUG",
+      "level": "INFO",
       "handlers": [
         "stderr",
         "file"

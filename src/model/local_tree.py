@@ -3,8 +3,8 @@ import logging
 from typing import override
 
 from context import Context
-from model.BaseTree import BaseTree
-from model.FileInfo import LocalFileInfo, LocalFolderInfo
+from model.base_tree import BaseTree
+from model.file_info import LocalFileInfo, LocalFolderInfo
 
 logger = logging.getLogger(__name__)
 
@@ -31,12 +31,12 @@ class LocalTree(BaseTree):
             folder_path = os.path.normpath(os.path.join(folder_path, folder_name))
             self._root[folder_path] = LocalFolderInfo(name=folder_name) #, stat_entry=os.stat(os.path.join(self._root_path, folder_path)))
 
-        stat_entry = os.stat(os.path.join(self._root_path, path))
         if os.path.isfile(os.path.join(self._root_path, path)):
+            stat_entry = os.stat(os.path.join(self._root_path, path))
             self._root[path] = LocalFileInfo(name=os.path.basename(path), stat_entry=stat_entry)
         elif os.path.isdir(os.path.join(self._root_path, path)):
-            self._root[path] = LocalFolderInfo(name=os.path.basename(path))#, stat_entry=stat_entry)
-        return self._root[path]
+            self._root[path] = LocalFolderInfo(name=os.path.basename(path))
+        return self._root.get(path, None)
     
     def _add_children(self, path):
         """Populate files and subfolders for a single folder."""
@@ -54,7 +54,7 @@ class LocalTree(BaseTree):
                         if self.ignore(path):
                             continue
                         logger.debug(f"Local folder {path}")
-                        self._root[path] = LocalFolderInfo(name=entry.name) #, stat_entry=stat_entry)
+                        self._root[path] = LocalFolderInfo(name=entry.name)
                         self._add_children(entry.path)
         except PermissionError:
             pass  # Skip unreadable directories

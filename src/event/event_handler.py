@@ -12,11 +12,12 @@ from dataclasses import dataclass
 from pyicloud.services.drive import DriveNode
 
 from context import Context
-from model.BaseTree import BaseTree
-from model.iCloudTree import iCloudTree
-from model.LocalTree import LocalTree
-from model.FileInfo import FolderInfo, LocalFileInfo, LocalFolderInfo, iCloudFileInfo, iCloudFolderInfo
-from model.ActionResult import UploadActionResult, DownloadActionResult
+from model.base_tree import BaseTree
+from model.icloud_tree import iCloudTree
+from model.local_tree import LocalTree
+from model.file_info import FolderInfo, LocalFileInfo, LocalFolderInfo, iCloudFileInfo, iCloudFolderInfo
+from model.action_result import UploadActionResult, DownloadActionResult
+from event.icloud_event import iCloudFolderModifiedEvent
 
 logger = logging.getLogger(__name__)  # __name__ is a common choice
 
@@ -57,6 +58,7 @@ class EventHandler(RegexMatchingEventHandler):
             DirModifiedEvent: self._handle_dir_modified,
             DirMovedEvent: self._handle_dir_moved,
             DirDeletedEvent: self._handle_dir_deleted,
+            iCloudFolderModifiedEvent: self._handle_icloud_folder_modified
         }
     
     def run(self) -> None:
@@ -156,6 +158,8 @@ class EventHandler(RegexMatchingEventHandler):
                 elif isinstance(result, UploadActionResult):
                     if not result.success:
                         logger.error(f"Upload failed for {result.path} with Exception {result.exception}")
+                    else:
+                        self._enqueue_event(iCloudFolderModifiedEvent(src_path=os.path.normpath(os.path.dirname(result.path))))
 
     def _dump_state(self, local: LocalTree, icloud: iCloudTree, refresh: iCloudTree=None):
         filename = "_before.log"
@@ -251,26 +255,26 @@ class EventHandler(RegexMatchingEventHandler):
         uploaded_count = 0
         in_common = these.root.keys() & those.root.keys()
         for path in in_common:
-            lfi = these.root[path]
-            cfi = those.root[path]
-            if isinstance(lfi, FolderInfo) and isinstance(cfi, FolderInfo):
+            left_fi = these.root[path]
+            right_fi = those.root[path]
+            if isinstance(left_fi, FolderInfo) and isinstance(right_fi, FolderInfo):
                 continue
-            if lfi.modified_time != cfi.modified_time:
-                logger.debug(f"Different time in both: {path} -> {left}: {lfi} | {right}: {cfi}")
+            if left_fi.modified_time != right_fi.modified_time:
+                logger.debug(f"Different time in both: {path} -> {left}: {left_fi} | {right}: {right_fi}")
                 # upload if the left file instance is newer and is a local file
-                # ignore otherwise when the refresh missed an update
-                if lfi.modified_time > cfi.modified_time and isinstance(lfi, LocalFileInfo):
+                # ignore if left is an iCloudFileInfo (the refresh missed an update)
+                if left_fi.modified_time > right_fi.modified_time and isinstance(left_fi, LocalFileInfo):
                     logger.debug(f"{left} is newer for {path}, uploading to iCloud Drive...")
                     self._handle_file_modified(FileModifiedEvent(src_path=path))
                     uploaded_count += 1
-                elif lfi.modified_time < cfi.modified_time:
+                elif left_fi.modified_time < right_fi.modified_time:
                     logger.info(f"{right} is newer for {path}, downloading to Local...")
                     self._suppressed_paths.add(path)
-                    self._pending.add(self._threadpool.submit(those.download, path, cfi, self._local.add))
+                    self._pending.add(self._threadpool.submit(those.download, path, right_fi, self._local.add))
                     downloaded_count += 1
             else:   
-                if lfi.size != cfi.size:
-                    logger.debug(f"Different size in both: {path} -> {left}: {lfi} | {right}: {cfi}")
+                if left_fi.size != right_fi.size:
+                    logger.debug(f"Different size in both: {path} -> {left}: {left_fi} | {right}: {right_fi}")
         return (uploaded_count, downloaded_count)
 
     def _retry_exception_events(self) -> None:
@@ -281,6 +285,9 @@ class EventHandler(RegexMatchingEventHandler):
                 self._exception_events.remove(event)
                 self._event_table.get(type(event), lambda e: logger.debug(f"Unhandled event {e}"))(event)
 
+    def _handle_icloud_folder_modified(self, event: iCloudFolderModifiedEvent) -> None:
+        self._pending.add(self._threadpool.submit(self._icloud.process_folder, root=self._icloud.root, path=event.src_path, force=True, executor=self._threadpool))
+    
     def _handle_file_created(self, event: FileCreatedEvent) -> None:
         self._handle_file_modified(event)
 
@@ -321,8 +328,7 @@ class EventHandler(RegexMatchingEventHandler):
             if cfi is None or lfi.modified_time > cfi.modified_time and lfi.size > 0:
                 if isinstance(lfi, LocalFileInfo):
                     logger.info(f"Local file {event.src_path} modified/created, uploading to iCloud Drive...")
-                    self._icloud.upload(event.src_path, lfi)
-                self._icloud.process_folder(root=self._icloud.root, path=parent_path, force=True, recursive=False)
+                    self._pending.add(self._threadpool.submit(self._icloud.upload, event.src_path, lfi))
         except Exception as e:
             logger.error(f"iCloud Drive upload failed for {event.src_path}: {e}")
             self._icloud.handle_drive_exception(e)
@@ -342,7 +348,7 @@ class EventHandler(RegexMatchingEventHandler):
             # Add the file back with the new name
             try:
                 cfi.node.rename(os.path.basename(event.dest_path))
-                self._pending.update(self._icloud.process_folder(root=self._icloud.root, path=dest_parent_path, force=True, executor=self._threadpool))
+                self._enqueue_event(iCloudFolderModifiedEvent(src_path=parent_path))
                 self._local.add(event.dest_path)
             except Exception as e:
                 logger.error(f"iCloud Drive rename failed for {event.src_path} to {event.dest_path}: {e}")
@@ -402,7 +408,7 @@ class EventHandler(RegexMatchingEventHandler):
                 parent_node: DriveNode = parent.node
                 logger.info(f"Local folder {event.src_path} created, iCloud Drive creating folder {event.src_path}...")
                 parent_node.mkdir(os.path.basename(event.src_path))
-                self._icloud.process_folder(root=self._icloud.root, path=parent_path, force=True, recursive=False)
+                self._enqueue_event(iCloudFolderModifiedEvent(src_path=parent_path))
             else:
                 logger.debug(f"iCloud Drive folder {event.src_path} already exists, skipping creation...")
         except Exception as e:
@@ -452,10 +458,13 @@ class EventHandler(RegexMatchingEventHandler):
             event.dest_path = os.path.relpath(event.dest_path, self._absolute_directory)
     
     def _enqueue_event(self, event: FileSystemEvent) -> None:
-        self._modify_event(event)
+        logger.debug(f"Enqueueing: {event}")
         if event.src_path in self._suppressed_paths:
-            lfi = LocalFileInfo(event.src_path, os.stat(os.path.join(self.ctx.directory, event.src_path)))
-            logger.debug(f"Suppressed event for path: {event.src_path} {lfi}")
+            try:
+                lfi = LocalFileInfo(event.src_path, os.stat(os.path.join(self.ctx.directory, event.src_path)))
+                logger.debug(f"Suppressed event for {lfi}")
+            except Exception as e:
+                logger.debug(f"suppressed event {event.src_path}")
             return
         
         qe = QueuedEvent(
@@ -467,17 +476,17 @@ class EventHandler(RegexMatchingEventHandler):
         pass
 
     def on_created(self, event):
-        logger.debug(f"Enqueueing: {event}")
+        self._modify_event(event)
         self._enqueue_event(event)
 
     def on_deleted(self, event):
-        logger.debug(f"Enqueueing: {event}")
+        self._modify_event(event)
         self._enqueue_event(event)
 
     def on_modified(self, event):
-        logger.debug(f"Enqueueing: {event}")
+        self._modify_event(event)
         self._enqueue_event(event)
         
     def on_moved(self, event):
-        logger.debug(f"Enqueueing: {event}")
+        self._modify_event(event)
         self._enqueue_event(event)

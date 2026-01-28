@@ -14,9 +14,9 @@ disable_warnings(category=InsecureRequestWarning)
 from context import Context
 import constants as constants
 from icloud.authenticate import authenticate
-from model.BaseTree import BaseTree
-from model.FileInfo import BaseInfo, LocalFileInfo, iCloudFileInfo, iCloudFolderInfo
-from model.ActionResult import DownloadActionResult, UploadActionResult
+from model.base_tree import BaseTree
+from model.file_info import BaseInfo, LocalFileInfo, iCloudFileInfo, iCloudFolderInfo
+from model.action_result import DownloadActionResult, UploadActionResult
 
 logger = logging.getLogger(__name__)
 
@@ -83,16 +83,15 @@ class iCloudTree(BaseTree):
             self._root[path] = iCloudFileInfo(name=os.path.basename(path), stat_entry=stat_entry)
         elif stat_entry.is_dir():
             self._root[path] = iCloudFolderInfo(name=os.path.basename(path), stat_entry=stat_entry)
-        return self._root[path]
+        return self._root.get(path, None)
 
-    def process_folder(self, root=None, path=None, force=False, recursive=True, ignore=True, executor=None) -> None|list[Future]:
+    def process_folder(self, root=None, path=None, force=True, recursive=False, ignore=True, executor=None) -> None|list[Future]:
         threadname = threading.current_thread().name
         if executor:
             threading.current_thread().name = f"process_folder {"root" if root is self._root else "trash"} {path}"
 
         relative_path = os.path.normpath(path)
         futures = []
-
         children = root[path].node.get_children(force=force)
         for child in children:
             _path = os.path.normpath(os.path.join(relative_path, child.name))
@@ -125,19 +124,27 @@ class iCloudTree(BaseTree):
                     root.pop(path)
 
     def upload(self, path: str, lfi: LocalFileInfo) -> UploadActionResult:
+        name = threading.current_thread().name
+        threading.current_thread().name = f"upload {path}"
+        result = UploadActionResult(success=True, path=path)
         try:
             parent_path: str = os.path.normpath(os.path.dirname(path))
 
             parent_node: DriveNode = self._root[parent_path].node
             with open(os.path.join(self._root_path, path), 'rb') as f:
                 parent_node.upload(f, mtime=lfi.modified_time.timestamp(), ctime=lfi.created_time.timestamp())
-            return UploadActionResult(success=True)
         except Exception as e:
             logger.error(f"Exception in upload {e}")
             self.handle_drive_exception(e)
-            return UploadActionResult(success=False, path=path, fn=self.upload, args=[str, lfi], exception=e)
-
+            result = UploadActionResult(success=False, path=path, fn=self.upload, args=[str, lfi], exception=e)
+        finally:
+            threading.current_thread().name = name
+        return result
+    
     def download(self, path: str, cfi: iCloudFileInfo, apply_after: Callable[[str], str]) -> DownloadActionResult:
+        name = threading.current_thread().name
+        threading.current_thread().name = f"download {path}"
+        result = DownloadActionResult(success=True, path=path)
         try:
             file_path = os.path.join(self._root_path, os.path.normpath(path))
             parent_path: str = os.path.normpath(os.path.dirname(path))
@@ -154,13 +161,14 @@ class iCloudTree(BaseTree):
             logger.debug(f"setting {file_path} modified_time to {cfi.modified_time}")
             os.utime(file_path, (cfi.modified_time.timestamp(), cfi.modified_time.timestamp()))
             apply_after(path)
-            return DownloadActionResult(success=True)
-
         except Exception as e:
             logger.error(f"Exception in download {e}")
             self.handle_drive_exception(e)
-            return DownloadActionResult(success=False, path=path, fn=self.upload, args=[path, cfi, apply_after], exception=e)
-
+            result = DownloadActionResult(success=False, path=path, fn=self.upload, args=[path, cfi, apply_after], exception=e)
+        finally:
+            threading.current_thread().name = name
+        return result
+    
     def create_icloud_folders(self, path: str) -> iCloudFolderInfo:
         try:
             folder_path = BaseTree.ROOT_FOLDER_NAME
@@ -195,17 +203,16 @@ class iCloudTree(BaseTree):
     
     def root_has_changed(self) -> bool:
         name = threading.current_thread().name
-        threading.current_thread().name = "check root change"
+        threading.current_thread().name = "check root"
         pre_count: int = 0
         post_count: int = 0
         try:
             pre_count = self.root_count
-            logger.debug(f"iCloud Drive root has {pre_count} files before refresh")
             # This is a hack to get refreshed node info without replacing the node object in pyicloud
             # and having to reload the entire tree
             post_count = self.drive.get_node_data(CLOUD_DOCS_ZONE_ID_ROOT).get('fileCount')
             self.drive._root.data['fileCount'] = post_count
-            logger.debug(f"iCloud Drive root has {post_count} files after refresh")
+            logger.debug(f"iCloud Drive root count pre: {pre_count}, post: {post_count}")
         except Exception as e:
             logger.warning(f"iCloud Drive get fileCount failed: {e}")
             return False
@@ -215,17 +222,16 @@ class iCloudTree(BaseTree):
  
     def trash_has_changed(self) -> bool:
         name = threading.current_thread().name
-        threading.current_thread().name = "check trash change"
+        threading.current_thread().name = "check trash"
         pre_count: int = 0
         post_count: int = 0
         try:
             pre_count = self.trash_count
-            logger.debug(f"iCloud Drive trash has {pre_count} items before refresh")
             # This is a hack to get refreshed node info without replacing the node object in pyicloud
             # and having to reload the entire tree
             post_count = self.drive.get_node_data(CLOUD_DOCS_ZONE_ID_TRASH).get('numberOfItems')
             self.drive._trash.data['numberOfItems'] = post_count
-            logger.debug(f"iCloud Drive trash has {post_count} items after refresh")
+            logger.debug(f"iCloud Drive trash count pre: {pre_count}, post: {post_count}")
         except Exception as e:
             logger.warning(f"iCloud Drive trash refresh failed: {e}")
             return False
