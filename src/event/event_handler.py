@@ -48,17 +48,17 @@ class EventHandler(RegexMatchingEventHandler):
         self._exception_events = set()
         self._suppressed_paths = set()
         self._threadpool = ThreadPoolExecutor()
-        self._pending = set()
+        self._pending_futures = set()
         self._event_table = {
-            FileCreatedEvent: self._handle_file_created,
-            FileModifiedEvent: self._handle_file_modified,
-            FileMovedEvent: self._handle_file_moved,
-            FileDeletedEvent: self._handle_file_deleted,
-            DirCreatedEvent: self._handle_dir_created,
-            DirModifiedEvent: self._handle_dir_modified,
-            DirMovedEvent: self._handle_dir_moved,
-            DirDeletedEvent: self._handle_dir_deleted,
-            iCloudFolderModifiedEvent: self._handle_icloud_folder_modified
+            FileCreatedEvent: self._handle_file_created_event,
+            FileModifiedEvent: self._handle_file_modified_event,
+            FileMovedEvent: self._handle_file_moved_event,
+            FileDeletedEvent: self._handle_file_deleted_event,
+            DirCreatedEvent: self._handle_dir_created_event,
+            DirModifiedEvent: self._handle_dir_modified_event,
+            DirMovedEvent: self._handle_dir_moved_event,
+            DirDeletedEvent: self._handle_dir_deleted_event,
+            iCloudFolderModifiedEvent: self._handle_icloud_folder_modified_event
         }
     
     def run(self) -> None:
@@ -142,16 +142,17 @@ class EventHandler(RegexMatchingEventHandler):
             event: FileSystemEvent = qe.event
             if self._local.ignore(event.src_path, event.is_directory) or self._icloud.ignore(event.src_path, event.is_directory):
                 continue
+            logger.debug(f"Dispatching event: {event}")
             self._event_table.get(type(event), lambda e: logger.warning(f"Unhandled event {e}"))(event)
         event_collector.clear()
 
     def _process_pending(self):
-        while self._pending:
-            done, self._pending = as_completed(self._pending), set()
+        while self._pending_futures:
+            done, self._pending_futures = as_completed(self._pending_futures), set()
             for future in done:
                 result = future.result()
                 if isinstance(result, list) and all(isinstance(f, future) for f in result):
-                    self._pending.update(result)
+                    self._pending_futures.update(result)
                 elif isinstance(result, DownloadActionResult):
                     if not result.success:
                         logger.error(f"Download failed for {result.path} with Exception {result.exception}")
@@ -216,9 +217,9 @@ class EventHandler(RegexMatchingEventHandler):
                 continue
             logger.debug(f"Only in local: {path} -> {self._local.root[path]}")
             if isinstance(self._local.root[path], LocalFolderInfo):
-                self._handle_dir_created(DirCreatedEvent(src_path=path))
+                self._handle_dir_created_event(DirCreatedEvent(src_path=path))
             else:
-                self._handle_file_modified(FileModifiedEvent(src_path=path))
+                self._handle_file_modified_event(FileModifiedEvent(src_path=path))
                 uploaded_count +=1
         return uploaded_count
 
@@ -241,7 +242,7 @@ class EventHandler(RegexMatchingEventHandler):
                         folder_created_count += 1
                 else:
                     logger.info(f"{right} {path} is missing locally, downloading to Local...")
-                    self._pending.add(self._threadpool.submit(self._icloud.download, path, cfi, self._local.add))
+                    self._pending_futures.add(self._threadpool.submit(self._icloud.download, path, cfi, self._local.add))
                     downloaded_count += 1
             except Exception as e:
                 logger.error(f"iCloud Drive download failed for {path}: {e}")
@@ -265,12 +266,12 @@ class EventHandler(RegexMatchingEventHandler):
                 # ignore if left is an iCloudFileInfo (the refresh missed an update)
                 if left_fi.modified_time > right_fi.modified_time and isinstance(left_fi, LocalFileInfo):
                     logger.debug(f"{left} is newer for {path}, uploading to iCloud Drive...")
-                    self._handle_file_modified(FileModifiedEvent(src_path=path))
+                    self._handle_file_modified_event(FileModifiedEvent(src_path=path))
                     uploaded_count += 1
                 elif left_fi.modified_time < right_fi.modified_time:
                     logger.info(f"{right} is newer for {path}, downloading to Local...")
                     self._suppressed_paths.add(path)
-                    self._pending.add(self._threadpool.submit(those.download, path, right_fi, self._local.add))
+                    self._pending_futures.add(self._threadpool.submit(those.download, path, right_fi, self._local.add))
                     downloaded_count += 1
             else:   
                 if left_fi.size != right_fi.size:
@@ -285,13 +286,13 @@ class EventHandler(RegexMatchingEventHandler):
                 self._exception_events.remove(event)
                 self._event_table.get(type(event), lambda e: logger.debug(f"Unhandled event {e}"))(event)
 
-    def _handle_icloud_folder_modified(self, event: iCloudFolderModifiedEvent) -> None:
-        self._pending.add(self._threadpool.submit(self._icloud.process_folder, root=self._icloud.root, path=event.src_path, force=True, executor=self._threadpool))
+    def _handle_icloud_folder_modified_event(self, event: iCloudFolderModifiedEvent) -> None:
+        self._pending_futures.add(self._threadpool.submit(self._icloud.process_folder, root=self._icloud.root, path=event.src_path, force=True, executor=self._threadpool))
     
-    def _handle_file_created(self, event: FileCreatedEvent) -> None:
-        self._handle_file_modified(event)
+    def _handle_file_created_event(self, event: FileCreatedEvent) -> None:
+        self._handle_file_modified_event(event)
 
-    def _handle_file_modified(self, event: FileModifiedEvent) -> None:
+    def _handle_file_modified_event(self, event: FileModifiedEvent) -> None:
         parent_path: str = os.path.normpath(os.path.dirname(event.src_path))
         lfi: LocalFileInfo = self._local.add(event.src_path)
 
@@ -328,13 +329,13 @@ class EventHandler(RegexMatchingEventHandler):
             if cfi is None or lfi.modified_time > cfi.modified_time and lfi.size > 0:
                 if isinstance(lfi, LocalFileInfo):
                     logger.info(f"Local file {event.src_path} modified/created, uploading to iCloud Drive...")
-                    self._pending.add(self._threadpool.submit(self._icloud.upload, event.src_path, lfi))
+                    self._pending_futures.add(self._threadpool.submit(self._icloud.upload, event.src_path, lfi))
         except Exception as e:
             logger.error(f"iCloud Drive upload failed for {event.src_path}: {e}")
             self._icloud.handle_drive_exception(e)
             self._exception_events.add(event)
 
-    def _handle_file_moved(self, event: FileMovedEvent) -> None:
+    def _handle_file_moved_event(self, event: FileMovedEvent) -> None:
         parent_path: str = os.path.normpath(os.path.dirname(event.src_path))
         dest_parent_path: str = os.path.normpath(os.path.dirname(event.dest_path))
         cfi: iCloudFileInfo | iCloudFolderInfo= self._icloud.root.get(event.src_path, None)
@@ -363,10 +364,10 @@ class EventHandler(RegexMatchingEventHandler):
             else:
                 de = DirDeletedEvent(src_path=event.src_path)
                 ce = DirCreatedEvent(src_path=event.dest_path)
-            self._handle_file_deleted(de)
-            self._handle_file_created(ce)
+            self._handle_file_deleted_event(de)
+            self._handle_file_created_event(ce)
 
-    def _handle_file_deleted(self, event: FileDeletedEvent) -> None:
+    def _handle_file_deleted_event(self, event: FileDeletedEvent) -> None:
         parent_path: str = os.path.normpath(os.path.dirname(event.src_path))
         parent: iCloudFolderInfo = self._icloud.root.get(parent_path, None)
         cfi: iCloudFileInfo | iCloudFolderInfo= self._icloud.root.get(event.src_path, None)
@@ -394,7 +395,7 @@ class EventHandler(RegexMatchingEventHandler):
             pass
             #logger.debug(f"iCloud Drive not deleting {'file' if isinstance(cfi, iCloudFileInfo) else 'folder'} {event.src_path} {parent} {cfi}")
 
-    def _handle_dir_created(self, event: DirCreatedEvent) -> None:
+    def _handle_dir_created_event(self, event: DirCreatedEvent) -> None:
         parent_path: str = os.path.normpath(os.path.dirname(event.src_path))
         self._local.add(event.src_path)
         parent: iCloudFolderInfo = self._icloud.root.get(parent_path, None)
@@ -416,15 +417,15 @@ class EventHandler(RegexMatchingEventHandler):
             self._icloud.handle_drive_exception(e)
             self._exception_events.add(event)
 
-    def _handle_dir_modified(self, event: DirModifiedEvent) -> None:
+    def _handle_dir_modified_event(self, event: DirModifiedEvent) -> None:
         return
 
-    def _handle_dir_moved(self, event: DirMovedEvent) -> None:
-        self._handle_file_moved(event)
+    def _handle_dir_moved_event(self, event: DirMovedEvent) -> None:
+        self._handle_file_moved_event(event)
         return
         
-    def _handle_dir_deleted(self, event: DirDeletedEvent) -> None:
-        self._handle_file_deleted(event)
+    def _handle_dir_deleted_event(self, event: DirDeletedEvent) -> None:
+        self._handle_file_deleted_event(event)
         return
     
     def _coalesce_events(self, events: list[QueuedEvent]) -> list[QueuedEvent]:
