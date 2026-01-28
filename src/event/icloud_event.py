@@ -1,7 +1,4 @@
-from watchdog.events import FileSystemEvent
+from watchdog.events import DirModifiedEvent
 
-class iCloudEvent(FileSystemEvent):
-    pass
-
-class iCloudFolderModifiedEvent(iCloudEvent):
+class iCloudFolderModifiedEvent(DirModifiedEvent):
     pass
