@@ -185,7 +185,8 @@ class EventHandler(RegexMatchingEventHandler):
             path = self._icloud.trash[name].node.data.get("restorePath")
             if path:
                 self._delete_local_file(path)
-                if (isinstance(self._local.root[path]), LocalFileInfo):
+                lfi = self._local.root.get(path, None)
+                if lfi and isinstance(lfi, LocalFileInfo):
                     deleted_count += 1
         return deleted_count
 
@@ -453,7 +454,8 @@ class EventHandler(RegexMatchingEventHandler):
     def _enqueue_event(self, event: FileSystemEvent) -> None:
         self._modify_event(event)
         if event.src_path in self._suppressed_paths:
-            logger.debug(f"Suppressed event for path: {event.src_path}")
+            lfi = LocalFileInfo(event.src_path, os.stat(os.path.join(self.ctx.directory, event.src_path)))
+            logger.debug(f"Suppressed event for path: {event.src_path} {lfi}")
             return
         
         qe = QueuedEvent(

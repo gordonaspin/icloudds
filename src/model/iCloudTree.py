@@ -142,13 +142,16 @@ class iCloudTree(BaseTree):
             file_path = os.path.join(self._root_path, os.path.normpath(path))
             parent_path: str = os.path.normpath(os.path.dirname(path))
             os.makedirs(os.path.join(self._root_path, parent_path), exist_ok=True)
-            with cfi.node.open(stream=True) as response:
-                with open(file_path, 'wb') as f:
+            with open(file_path, 'wb', buffering=0) as f:
+                with cfi.node.open(stream=True) as response:
                     for chunk in response.iter_content(chunk_size=constants.DOWNLOAD_MEDIA_CHUNK_SIZE):
                         if chunk:
                             f.write(chunk)
-                            f.flush()
+                f.flush()
+                os.fsync(f.fileno())
+                f.close()
 
+            logger.debug(f"setting {file_path} modified_time to {cfi.modified_time}")
             os.utime(file_path, (cfi.modified_time.timestamp(), cfi.modified_time.timestamp()))
             apply_after(path)
             return DownloadActionResult(success=True)
