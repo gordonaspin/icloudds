@@ -48,6 +48,8 @@ class EventHandler(RegexMatchingEventHandler):
         self._exception_events = set()
         self._suppressed_paths = set()
         self._threadpool = ThreadPoolExecutor()
+        self._upload_threadpool = ThreadPoolExecutor(max_workers=ctx.upload_workers)
+        self._download_threadpool = ThreadPoolExecutor(max_workers=ctx.download_workers)
         self._pending_futures = set()
         self._event_table = {
             FileCreatedEvent: self._handle_file_created_event,
@@ -165,10 +167,13 @@ class EventHandler(RegexMatchingEventHandler):
                 elif isinstance(result, DownloadActionResult):
                     if not result.success:
                         logger.error(f"Download failed for {result.path} with Exception {result.exception}")
+                    else:
+                        logger.debug(f"Download succeeded for {result.path}")
                 elif isinstance(result, UploadActionResult):
                     if not result.success:
                         logger.error(f"Upload failed for {result.path} with Exception {result.exception}")
                     else:
+                        logger.debug(f"Upload succeeded for {result.path}")
                         self._enqueue_event(iCloudFolderModifiedEvent(src_path=os.path.normpath(os.path.dirname(result.path))))
 
     def _dump_state(self, local: LocalTree, icloud: iCloudTree, refresh: iCloudTree=None):
@@ -251,7 +256,7 @@ class EventHandler(RegexMatchingEventHandler):
                         folder_created_count += 1
                 else:
                     logger.info(f"{right} {path} is missing locally, downloading to Local...")
-                    self._pending_futures.add(self._threadpool.submit(self._icloud.download, path, cfi, self._local.add))
+                    self._pending_futures.add(self._download_threadpool.submit(self._icloud.download, path, cfi, self._local.add))
                     downloaded_count += 1
             except Exception as e:
                 logger.error(f"iCloud Drive download failed for {path}: {e}")
@@ -280,7 +285,7 @@ class EventHandler(RegexMatchingEventHandler):
                 elif left_fi.modified_time < right_fi.modified_time:
                     logger.info(f"{right} is newer for {path}, downloading to Local...")
                     self._suppressed_paths.add(path)
-                    self._pending_futures.add(self._threadpool.submit(those.download, path, right_fi, self._local.add))
+                    self._pending_futures.add(self._download_threadpool.submit(those.download, path, right_fi, self._local.add))
                     downloaded_count += 1
             else:   
                 if left_fi.size != right_fi.size:
@@ -296,7 +301,7 @@ class EventHandler(RegexMatchingEventHandler):
                 self._event_table.get(type(event), lambda e: logger.debug(f"Unhandled event {e}"))(event)
 
     def _handle_icloud_folder_modified_event(self, event: iCloudFolderModifiedEvent) -> None:
-        self._pending_futures.add(self._threadpool.submit(self._icloud.process_folder, root=self._icloud.root, path=event.src_path, force=True, executor=self._threadpool))
+        self._pending_futures.add(self._threadpool.submit(self._icloud.process_folder, root=self._icloud.root, path=event.src_path, ignore=True, recursive=False, executor=self._threadpool))
     
     def _handle_file_created_event(self, event: FileCreatedEvent) -> None:
         self._handle_file_modified_event(event)
@@ -338,7 +343,7 @@ class EventHandler(RegexMatchingEventHandler):
             if cfi is None or lfi.modified_time > cfi.modified_time and lfi.size > 0:
                 if isinstance(lfi, LocalFileInfo):
                     logger.info(f"Local file {event.src_path} modified/created, uploading to iCloud Drive...")
-                    self._pending_futures.add(self._threadpool.submit(self._icloud.upload, event.src_path, lfi))
+                    self._pending_futures.add(self._upload_threadpool.submit(self._icloud.upload, event.src_path, lfi))
         except Exception as e:
             logger.error(f"iCloud Drive upload failed for {event.src_path}: {e}")
             self._icloud.handle_drive_exception(e)

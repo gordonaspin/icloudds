@@ -1,5 +1,4 @@
 import os
-import inspect
 import click
 from click import version_option
 import logging
@@ -16,26 +15,28 @@ from event.event_handler import EventHandler
 name = "icloudds"
 logger = logging.getLogger(name)  # __name__ is a common choice
 
-CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
+CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"], max_content_width=120)
 @click.command(context_settings=CONTEXT_SETTINGS, options_metavar="<options>", no_args_is_help=True)
 @click.option("-d", "--directory",      help="Local directory that should be used for download", type=click.Path(exists=True), metavar="<directory>")
 @click.option("-u", "--username",       help="Your iCloud username or email address", metavar="<username>")
 @click.option("-p", "--password",       help="Your iCloud password (default: use pyicloud keyring or prompt for password)", metavar="<password>")
-@click.option("--cookie-directory",     help="Directory to store cookies for authentication (default: ~/.pyicloud)", metavar="</cookie/directory>", default="~/.pyicloud")
-@click.option("--ignore-icloud",        help="Ignore iCloud Drive files/folders filename", type=click.Path(exists=False), metavar="<filename>", default=".ignore-icloud.txt")
-@click.option("--ignore-local",         help="Ignore Local files/folders filename", type=click.Path(exists=False), metavar="<filename>", default=".ignore-local.txt")
-@click.option("--include-icloud",       help="Include iCloud Drive files/folders filename", type=click.Path(exists=False), metavar="<filename>", default=".include-icloud.txt")
-@click.option("--include-local",        help="Include Local files/folders filename", type=click.Path(exists=False), metavar="<filename>", default=".include-icloud.txt")
-@click.option("--logging-config",       help="JSON logging config filename (default: logging-config.json)", metavar="<filename>", default="logging-config.json")
-@click.option("--retry-period",         help="Period in seconds to retry failed events", type=click.IntRange(min=constants.RETRY_SECONDS), metavar="<seconds>", default=constants.RETRY_SECONDS)
-@click.option("--icloud-check-period",  help="Period in seconds to look for iCloud changes", type=click.IntRange(min=constants.ICLOUD_CHECK_SECONDS), metavar="<seconds>", default=constants.ICLOUD_CHECK_SECONDS)
-@click.option("--icloud-refresh-period", help="Period in seconds to perform full iCloud refresh", type=click.IntRange(min=constants.ICLOUD_REFRESH_SECONDS), metavar="<seconds>", default=constants.ICLOUD_REFRESH_SECONDS)
+@click.option("--cookie-directory",     help="Directory to store cookies for authentication", metavar="<directory>", default="~/.pyicloud", show_default=True)
+@click.option("--ignore-icloud",        help="Ignore iCloud Drive files/folders filename", type=click.Path(exists=False), metavar="<filename>", default=".ignore-icloud.txt", show_default=True)
+@click.option("--ignore-local",         help="Ignore Local files/folders filename", type=click.Path(exists=False), metavar="<filename>", default=".ignore-local.txt", show_default=True)
+@click.option("--include-icloud",       help="Include iCloud Drive files/folders filename", type=click.Path(exists=False), metavar="<filename>", default=".include-icloud.txt", show_default=True)
+@click.option("--include-local",        help="Include Local files/folders filename", type=click.Path(exists=False), metavar="<filename>", default=".include-local.txt", show_default=True)
+@click.option("--logging-config",       help="JSON logging config filename (default: logging-config.json)", metavar="<filename>", default="logging-config.json", show_default=True)
+@click.option("--retry-period",         help="Period in seconds to retry failed events", type=click.IntRange(min=constants.RETRY_SECONDS), metavar="<seconds>", default=constants.RETRY_SECONDS, show_default=True)
+@click.option("--icloud-check-period",  help="Period in seconds to look for iCloud changes", type=click.IntRange(min=constants.ICLOUD_CHECK_SECONDS), metavar="<seconds>", default=constants.ICLOUD_CHECK_SECONDS, show_default=True)
+@click.option("--icloud-refresh-period", help="Period in seconds to perform full iCloud refresh", type=click.IntRange(min=constants.ICLOUD_REFRESH_SECONDS), metavar="<seconds>", default=constants.ICLOUD_REFRESH_SECONDS, show_default=True)
+@click.option("--download-workers",     help="Number of download workers", type=click.IntRange(min=1), metavar="<workers>", default=os.process_cpu_count(), show_default=True)
 @version_option(package_name='icloudds')
 
 def main(directory: str, username: str, password: str, cookie_directory: str,
          ignore_icloud: str, ignore_local: str,
          include_icloud: str, include_local: str, logging_config: str,
-         retry_period: int, icloud_check_period: int, icloud_refresh_period: int
+         retry_period: int, icloud_check_period: int, icloud_refresh_period: int,
+         download_workers: int
          ):
     
     ignore_icloud  = [line.strip() for line in open(ignore_icloud).readlines()  if not line.startswith('#')] if ignore_icloud and os.path.isfile(ignore_icloud) else []
@@ -57,7 +58,9 @@ def main(directory: str, username: str, password: str, cookie_directory: str,
                       log_path=log_path,
                       retry_period=timedelta(seconds=retry_period),
                       icloud_check_period=timedelta(seconds=icloud_check_period),
-                      icloud_refresh_period=timedelta(seconds=icloud_refresh_period))
+                      icloud_refresh_period=timedelta(seconds=icloud_refresh_period),
+                      upload_workers=1,
+                      download_workers=download_workers)
     
     logger.info(f"{name} {importlib.metadata.version("icloudds")}")
 

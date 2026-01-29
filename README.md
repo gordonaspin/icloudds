@@ -27,7 +27,9 @@ One this initial sync is complete, `icloudds` starts listening for local file sy
 ### More detail
 `icloudds` uses the python watchdog filesystem event generator. When a file is created watchdog generates many events so `icloudds` coalesces these events before dispatching to handlers. In addition to this, when `icloudds` needs to download, rename, create files locally it suppresses event dispatch for those paths. `icloudds` does perform a sanity check on iCloud Drive refreshes. iCloud's model includes a fileCount at the root node and after a refresh `icloudds` checks its count of files/folders with what iCloud reports and if it's different, `icloudds` discards the refresh and will try later, using a backoff algorithm to let things settle in iCloud Drive.
 
-`icloudds` uses threads managed by the python ThreadPoolExecutor. Traversing the iCloud model does take time as it takes multiple round-trips to walk the entire tree. In this respect, starting at the root node, a thread is spawned for each sub-folder to retrieve information about that folder, and again more threads are spawned for each of its subfolfers, and so-on. All these Futures are gathered and waited on until they finish. This is the fastest way to retrieve all the iCloud node information. Uploads and downloads of files are also spawned off as separate threads. To protect the integrity of the iCloud file list, `icloudds` uses a ThreadSafeDict protected with a Lock.
+`icloudds` uses threads managed by the python ThreadPoolExecutor. Traversing the iCloud model can take time as multiple round-trips are required to walk the entire tree. In this respect, starting at the root node, a thread is spawned for each sub-folder to retrieve information about that folder, and again more threads are spawned for each of its subfolfers, and so-on. All these Futures are gathered and waited on until they finish. This is the fastest way to retrieve all the iCloud node information. To protect the integrity of the iCloud file list, `icloudds` uses a ThreadSafeDict (protected with a Lock).
+
+`icloudds` uploads and downloads files using separate ThreadPoolExecutors. The upload thread pool is limited to one worker as concurrent uploads to iCloud Drive cause a ZONE_BUSY error with reason 'Conflict'.
 ``` python
 class ThreadSafeDict(UserDict):
     def __init__(self, *args, **kwargs):
@@ -48,11 +50,12 @@ Along the way of implementing this and my prior version of iCloud Drive Sync I l
 2. iCloud Drive has the concept of a "root" folder and a "trash" folder. You would think that moving an item to Trash would decrease the count of items in root and increase the number of items in Trash, right? No. Trash increases, but the count of items in "root" stays the same. So, I guess Trash is in root ? Except it isn't when you retrieve all the items in root. Again, Annoying.
 3. Not surprisingly, there are more types of objects in iCloud Drive beyond files and folders. There are also 'app_library' objects for applications such as GarageBand, TextEdit, Readdle etc. etc. `icloudds` currently ignores these items.
 4. If you've ever inspected a .app on MacOS you know its a package (zip file). When this gets stored in iCloud Drive a .app file gets expanded into a folder and its contents. This is aggravating.
+5. Concurrent uploads to iCloud Drive results in ZONE_BUSY errors for 'Conflict' reasons. Shame on Apple for limiting concurrent uploads!
 
 ## Configurable Items
 `icloudds` can ignore regexes and include specific folders.
 ### Ignore Regexes
-`icloudds` can ignore files locally and in iCloud. Some ignores are built-in, for example in iCloud .DS_Store files and .com-apple-bird* files are ignored using regexes. Ignore regexes are defined in files, with one regex per line, e.g.:
+`icloudds` can ignore files locally and in iCloud using the --ignore-local and --ignore-icloud options. Some ignores are built-in, for example in iCloud .DS_Store files and .com-apple-bird* files are ignored using regexes. Ignore regexes are defined in files, with one regex per line, e.g.:
 ```code
 # regex patterns to ignore, one per line
 # built-in ignore patterns are:
@@ -152,33 +155,26 @@ $ python icloudds.py -h
 ```
 or, if you build and install the wheel from the dist/ folder
 ```
-$ icloudds -h
-
+$ icloudds -h          
 Usage: icloudds <options>
 
 Options:
-  -d, --directory <directory>     Local directory that should be used for
-                                  download
+  -d, --directory <directory>     Local directory that should be used for download
   -u, --username <username>       Your iCloud username or email address
-  -p, --password <password>       Your iCloud password (default: use pyicloud
-                                  keyring or prompt for password)
-  --cookie-directory </cookie/directory>
-                                  Directory to store cookies for
-                                  authentication (default: ~/.pyicloud)
-  --ignore-icloud <filename>      Ignore iCloud Drive files/folders filename
-  --ignore-local <filename>       Ignore Local files/folders filename
-  --include-icloud <filename>     Include iCloud Drive files/folders filename
-  --include-local <filename>      Include Local files/folders filename
-  --logging-config <filename>     JSON logging config filename (default:
-                                  logging-config.json)
-  --retry-period <seconds>        Period in seconds to retry failed events
-                                  [x>=5]
+  -p, --password <password>       Your iCloud password (default: use pyicloud keyring or prompt for password)
+  --cookie-directory <directory>  Directory to store cookies for authentication  [default: ~/.pyicloud]
+  --ignore-icloud <filename>      Ignore iCloud Drive files/folders filename  [default: .ignore-icloud.txt]
+  --ignore-local <filename>       Ignore Local files/folders filename  [default: .ignore-local.txt]
+  --include-icloud <filename>     Include iCloud Drive files/folders filename  [default: .include-icloud.txt]
+  --include-local <filename>      Include Local files/folders filename  [default: .include-local.txt]
+  --logging-config <filename>     JSON logging config filename (default: logging-config.json)  [default: logging-
+                                  config.json]
+  --retry-period <seconds>        Period in seconds to retry failed events  [default: 5; x>=5]
   --icloud-check-period <seconds>
-                                  Period in seconds to look for iCloud changes
-                                  [x>=20]
+                                  Period in seconds to look for iCloud changes  [default: 20; x>=20]
   --icloud-refresh-period <seconds>
-                                  Period in seconds to perform full iCloud
-                                  refresh  [x>=90]
+                                  Period in seconds to perform full iCloud refresh  [default: 90; x>=90]
+  --download-workers <workers>    Number of download workers  [default: 32; x>=1]
   --version                       Show the version and exit.
   -h, --help                      Show this message and exit.
 ```
