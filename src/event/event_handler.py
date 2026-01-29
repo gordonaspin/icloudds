@@ -71,6 +71,7 @@ class EventHandler(RegexMatchingEventHandler):
         refresh_future: Future = None
         root_has_changed: bool = False
         trash_has_changed: bool = False
+        event_collector: list[QueuedEvent] = []
 
         self._local.refresh()
         if self._icloud.refresh():
@@ -82,62 +83,67 @@ class EventHandler(RegexMatchingEventHandler):
 
         logger.info("Starting event handler main loop...")
         while True:
-            event_collector: list[QueuedEvent] = []
             try:
                 while True:
                     event: QueuedEvent = self._queue.get(block=True, timeout=10)
                     event_collector.append(event)
             except Empty:
-                self._suppressed_paths.clear()
-                self._dispatch_events(event_collector=event_collector)
-                self._process_pending()
-                if datetime.now() - retry_dt > retry_period:
-                    self._retry_exception_events()
-                    retry_dt = datetime.now()
+                # If the background refresh is not running, we can process events
+                if not refresh_future:
+                    self._dispatch_events(event_collector=event_collector)
+                    self._process_pending_futures()
+                    if not self._pending_futures:
+                        # No pending futures, we can clear suppressed paths
+                        self._suppressed_paths.clear()
+                        if datetime.now() - retry_dt > retry_period:
+                            self._retry_exception_events()
+                            retry_dt = datetime.now()
+                        if datetime.now() - refresh_dt > icloud_check_period:
+                            root_changed_future: Future = None if root_has_changed else self._threadpool.submit(self._icloud.root_has_changed)
+                            trash_changed_future: Future = None if trash_has_changed else self._threadpool.submit(self._icloud.trash_has_changed)
+                            wait([f for f in [root_changed_future, trash_changed_future] if f is not None])
+                            root_has_changed = root_changed_future.result() if root_changed_future else root_has_changed
+                            trash_has_changed = trash_changed_future.result() if trash_changed_future else trash_has_changed
+                            if datetime.now() - refresh_dt > icloud_refresh_period or root_has_changed or trash_has_changed:
+                                if datetime.now() - refresh_dt > icloud_refresh_period:
+                                    logger.debug("refresh period elapsed")
+                                if root_has_changed:
+                                    logger.debug(f"root has changed")
+                                if trash_has_changed:
+                                    logger.debug("trash has changed")
+                                refresh = iCloudTree(ctx=self.ctx)
+                                refresh_future = self._threadpool.submit(refresh.refresh)
 
-                if refresh_future and refresh_future.done():
+                # If the background refresh is done, apply it
+                elif refresh_future.done():
                     refresh_dt = datetime.now() 
                     result = refresh_future.result()
                     if result:
-                        self._dump_state(local=self._local, icloud=self._icloud)
-                        result = self._apply_icloud_refresh(refresh)
-                        if any(result):
-                            logger.info(f"Background refresh applied, {result[0]} uploaded, {result[1]} downloaded, {result[2]} deleted, {result[3]} folders created")
+                        if not self._pending_futures and not event_collector:
+                            self._dump_state(local=self._local, icloud=self._icloud)
+                            logger.debug("No pending futures or events, proceeding with applying refresh")
+                            uploaded, downloaded, deleted, folders_created = self._apply_icloud_refresh(refresh)
+                            if any([uploaded, downloaded, deleted, folders_created]):
+                                logger.info(f"Background refresh applied, {uploaded} uploaded, {downloaded} downloaded, {deleted} deleted, {folders_created} folders created")
+                            else:
+                                logger.info(f"Background refresh, no changes")
+                            self._dump_state(local=self._local, icloud=self._icloud, refresh=refresh)
+                            self._icloud = refresh
+                            root_has_changed = trash_has_changed = False
+                            icloud_refresh_period = self.ctx.icloud_refresh_period
                         else:
-                            logger.info(f"Background refresh, no changes")
-                        self._dump_state(local=self._local, icloud=self._icloud, refresh=refresh)
-                        self._icloud = refresh
-                        root_has_changed = trash_has_changed = False
-                        icloud_refresh_period = self.ctx.icloud_refresh_period
+                            logger.warning(f"Background refresh discarded due to pending futures or events, will retry in {icloud_refresh_period}")
                     else:
                         if not(root_has_changed or trash_has_changed):
                             icloud_refresh_period = min(self.ctx.icloud_refresh_period * 6, icloud_refresh_period + self.ctx.icloud_refresh_period)
                         logger.warning(f"Background refresh was inconsisent, will retry in {icloud_refresh_period}")
                     refresh_future = None
 
-                if datetime.now() - refresh_dt > icloud_check_period:
-                    # Don't check for updates if the refresh thread is running
-                    if refresh_future:
-                        continue
-                    root_changed_future: Future = None if root_has_changed else self._threadpool.submit(self._icloud.root_has_changed)
-                    trash_changed_future: Future = None if trash_has_changed else self._threadpool.submit(self._icloud.trash_has_changed)
-                    wait([f for f in [root_changed_future, trash_changed_future] if f is not None])
-                    root_has_changed = root_changed_future.result() if root_changed_future else root_has_changed
-                    trash_has_changed = trash_changed_future.result() if trash_changed_future else trash_has_changed
-                    if datetime.now() - refresh_dt > icloud_refresh_period or root_has_changed or trash_has_changed:
-                        if datetime.now() - refresh_dt > icloud_refresh_period:
-                            logger.debug("refresh period elapsed")
-                        if root_has_changed:
-                            logger.debug(f"root has changed")
-                        if trash_has_changed:
-                            logger.debug("trash has changed")
-                        refresh = iCloudTree(ctx=self.ctx)
-                        refresh_future = self._threadpool.submit(refresh.refresh)
-
     def _dispatch_events(self, event_collector):
         if not event_collector:
             return
         events: list[QueuedEvent] = self._coalesce_events(event_collector)
+        logger.debug(f"Dispatching {len(events)} coalesced events...")
         for qe in events:
             event: FileSystemEvent = qe.event
             if self._local.ignore(event.src_path, event.is_directory) or self._icloud.ignore(event.src_path, event.is_directory):
@@ -146,8 +152,11 @@ class EventHandler(RegexMatchingEventHandler):
             self._event_table.get(type(event), lambda e: logger.warning(f"Unhandled event {e}"))(event)
         event_collector.clear()
 
-    def _process_pending(self):
-        while self._pending_futures:
+    def _process_pending_futures(self):
+        if not self._pending_futures:
+            return
+        logger.debug(f"Processing {len(self._pending_futures)} pending futures...")
+        for _ in set(self._pending_futures):
             done, self._pending_futures = as_completed(self._pending_futures), set()
             for future in done:
                 result = future.result()
