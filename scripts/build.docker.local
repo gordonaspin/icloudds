@@ -20,4 +20,3 @@ docker build \
   .
 
 docker tag "${REPO}/${PROJECT}:${ICLOUDDS_VERSION}" "${REPO}/${PROJECT}:latest"
-docker push -a ${REPO}/${PROJECT}
