@@ -6,7 +6,6 @@ import shutil
 from timeloop import Timeloop
 from concurrent.futures import ThreadPoolExecutor, Future, wait, as_completed
 
-from datetime import datetime, timedelta
 from watchdog.events import RegexMatchingEventHandler
 from watchdog.events import FileSystemEvent, FileCreatedEvent, FileModifiedEvent, FileMovedEvent, FileDeletedEvent, DirCreatedEvent, DirModifiedEvent, DirDeletedEvent, DirMovedEvent
 from queue import Queue, Empty
@@ -158,7 +157,7 @@ class EventHandler(RegexMatchingEventHandler):
             done, self._pending_futures = as_completed(self._pending_futures), set()
             for future in done:
                 result = future.result()
-                if isinstance(result, list) and all(isinstance(f, future) for f in result):
+                if isinstance(result, list) and all(isinstance(f, Future) for f in result):
                     self._pending_futures.update(result)
                 else:
                     self._handle_action_result(result)
