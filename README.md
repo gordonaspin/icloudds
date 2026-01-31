@@ -29,28 +29,17 @@ One this initial sync is complete, `icloudds` starts listening for local file sy
 
 `icloudds` uses threads managed by the python ThreadPoolExecutor. Traversing the iCloud model can take time as multiple round-trips are required to walk the entire tree. In this respect, starting at the root node, a thread is spawned for each sub-folder to retrieve information about that folder, and again more threads are spawned for each of its subfolfers, and so-on. All these Futures are gathered and waited on until they finish. This is the fastest way to retrieve all the iCloud node information. To protect the integrity of the iCloud file list, `icloudds` uses a ThreadSafeDict (protected with a Lock).
 
-`icloudds` uploads and downloads files using separate ThreadPoolExecutors. The upload thread pool is limited to one worker as concurrent uploads to iCloud Drive cause a ZONE_BUSY error with reason 'Conflict'.
-``` python
-class ThreadSafeDict(UserDict):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._lock = Lock()
+`icloudds` uses a timepool object to register functions that run periodically. These functions run the background iCloud Drive refresh cycle and check whether iCloud Drive root or trash folders have changes, if so a refresh is called immediately.
 
-    def __setitem__(self, key, value):
-        with self._lock:
-            super().__setitem__(key, value)
+`icloudds` uploads and downloads files using separate ThreadPoolExecutors. The _limited_threadpool has only one worker as concurrent uploads, deletes and renames to iCloud Drive cause a ZONE_BUSY error with reason 'Conflict'. The _unlimited_threadpool is used to download files and scan the iCloud folder structure in parallel.
 
-    def __getitem__(self, key):
-        with self._lock:
-            return super().__getitem__(key)
-```
 ### Odds and Ends
 Along the way of implementing this and my prior version of iCloud Drive Sync I learned a few wierd ways that iCloud works:
 1. iCloud Drive stores file timestamps in UTC, but rounds up timestamps to the nearest second. Annoying.
 2. iCloud Drive has the concept of a "root" folder and a "trash" folder. You would think that moving an item to Trash would decrease the count of items in root and increase the number of items in Trash, right? No. Trash increases, but the count of items in "root" stays the same. So, I guess Trash is in root ? Except it isn't when you retrieve all the items in root. Again, Annoying.
 3. Not surprisingly, there are more types of objects in iCloud Drive beyond files and folders. There are also 'app_library' objects for applications such as GarageBand, TextEdit, Readdle etc. etc. `icloudds` currently ignores these items.
 4. If you've ever inspected a .app on MacOS you know its a package (zip file). When this gets stored in iCloud Drive a .app file gets expanded into a folder and its contents. This is aggravating.
-5. Concurrent uploads to iCloud Drive results in ZONE_BUSY errors for 'Conflict' reasons. Shame on Apple for limiting concurrent uploads!
+5. Concurrent uploads, deletes, renames to iCloud Drive results in ZONE_BUSY errors for 'Conflict' reasons. Shame on Apple for limiting concurrent actions!
 
 ## Configurable Items
 `icloudds` can ignore regexes and include specific folders.
@@ -155,7 +144,7 @@ $ python icloudds.py -h
 ```
 or, if you build and install the wheel from the dist/ folder
 ```
-$ icloudds -h          
+$ icloudds -h
 Usage: icloudds <options>
 
 Options:
@@ -174,7 +163,7 @@ Options:
                                   Period in seconds to look for iCloud changes  [default: 20; x>=20]
   --icloud-refresh-period <seconds>
                                   Period in seconds to perform full iCloud refresh  [default: 90; x>=90]
-  --download-workers <workers>    Number of download workers  [default: 32; x>=1]
+  --max-workers <workers>         Maximum number of concurrent workers  [default: 32; x>=1]
   --version                       Show the version and exit.
   -h, --help                      Show this message and exit.
 ```

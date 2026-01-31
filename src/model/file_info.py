@@ -8,6 +8,10 @@ from datetime import datetime, timezone, timedelta
 from pyicloud.services.drive import DriveNode, _date_to_utc, CLOUD_DOCS_ZONE_ID_ROOT, NODE_TRASH
 
 class BaseInfo:
+    """
+    Base class for file and folder information objects.
+    Provides common utility methods for handling timestamps across different platforms.
+    """
     def _round_seconds(self, obj: datetime) -> datetime:
         """iCloud Drive stores files in the cloud using UTC, however it rounds the seconds up to the nearest second"""
         if platform.system() == "Linux":
@@ -19,21 +23,39 @@ class BaseInfo:
 
 
 class FolderInfo(BaseInfo):
-    pass
-
-class FileInfo(BaseInfo):
-    pass
-
-@dataclass
-class LocalFolderInfo(FolderInfo):
-    name: str
-
+    """
+    Base class for folder information.
+    Extends BaseInfo with folder-specific functionality.
+    """
     @override
     def __repr__(self):
         return f"FolderInfo({self.name})"
 
+class FileInfo(BaseInfo):
+    """
+    Base class for file information.
+    Extends BaseInfo with file-specific functionality including size and modification time.
+    """
+    @override
+    def __repr__(self):
+        return f"FileInfo({self.name}, size={self.size}, modified={self.modified_time})"
+
+@dataclass
+class LocalFolderInfo(FolderInfo):
+    """
+    Represents a local folder stored on the file system.
+    Stores the folder name and inherits from FolderInfo.
+    """
+    name: str
+
+
 @dataclass
 class LocalFileInfo(FileInfo):
+    """
+    Represents a local file stored on the file system.
+    Extracts and stores file metadata (size, created time, modified time) from os.stat().
+    Handles platform-specific timestamp rounding (Linux rounds up, Darwin rounds down).
+    """
     name: str
     stat_entry: InitVar[os.stat_result]
     size: int = 0
@@ -44,13 +66,15 @@ class LocalFileInfo(FileInfo):
         self.size: int = stat_entry.st_size
         self.created_time: datetime = self._round_seconds(datetime.fromtimestamp(stat_entry.st_ctime, tz=timezone.utc))
         self.modified_time: datetime = self._round_seconds(datetime.fromtimestamp(stat_entry.st_mtime, tz=timezone.utc))
-
-    @override
-    def __repr__(self):
-        return f"FileInfo({self.name}, size={self.size}, modified={self.modified_time})"
     
 @dataclass
 class iCloudFolderInfo(FolderInfo):
+    """
+    Represents a folder in iCloud Drive.
+    Wraps a DriveNode object and provides properties to access folder metadata.
+    Properties are retrieved dynamically from the underlying DriveNode data.
+    Handles special cases for root and trash folders.
+    """
     node: DriveNode
 
     @override
@@ -76,12 +100,14 @@ class iCloudFolderInfo(FolderInfo):
     def number_of_items(self) -> int:
         return self.node.data['numberOfItems']
 
-    @override
-    def __repr__(self):
-        return f"FolderInfo({self.name})"
-
 @dataclass
 class iCloudFileInfo(FileInfo):
+    """
+    Represents a file in iCloud Drive.
+    Wraps a DriveNode object and provides properties to access file metadata.
+    Properties are retrieved dynamically from the underlying DriveNode data.
+    Handles timezone conversion for iCloud timestamps to UTC.
+    """
     node: DriveNode
 
     @override
@@ -107,8 +133,3 @@ class iCloudFileInfo(FileInfo):
     @property
     def created_time(self) -> datetime:
         return _date_to_utc(self.node.data.get("dateCreated")).replace(tzinfo=timezone.utc)  # Folder does not have date
-    
-    @override
-    def __repr__(self):
-        return f"FileInfo({self.name}, size={self.size}, modified={self.modified_time})"
-    

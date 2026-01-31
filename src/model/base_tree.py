@@ -2,26 +2,12 @@ import os
 import logging
 import re
 from collections.abc import Iterator
-from collections import UserDict
-from threading import Lock
 
 from model.file_info import BaseInfo, FileInfo, FolderInfo
+from model.thread_safe import ThreadSafeDict
 
 logger = logging.getLogger(__name__)
 
-class ThreadSafeDict(UserDict):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._lock = Lock()
-
-    def __setitem__(self, key, value):
-        with self._lock:
-            super().__setitem__(key, value)
-
-    def __getitem__(self, key):
-        with self._lock:
-            return super().__getitem__(key)
-        
 class BaseTree():
     ROOT_FOLDER_NAME = "."
 

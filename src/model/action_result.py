@@ -8,23 +8,30 @@ class ActionResult:
     fn: Callable = None
     args: list = None
     exception: Exception = None
+    name = "ActionResult"
 
-class NoAction(ActionResult):
+    def __str__(self):
+        return f"{self.__class__.__name__.lower()} {'succeeded' if self.success else 'failed'} {self.path}"
+
+class Nil(ActionResult):
     def __init__(self):
         self.success = True
         self.path = ""
 
-class DownloadAction(ActionResult):
+class Download(ActionResult):
     pass
 
-class UploadAction(ActionResult):
+class Upload(ActionResult):
     pass
 
-class RenameAction(ActionResult):
+class Rename(ActionResult):
+    pass
+        
+class Delete(ActionResult):
     pass
 
-class DeleteAction(ActionResult):
+class MkDir(ActionResult):
     pass
 
-class CreateFolderAction(ActionResult):
+class Refresh(ActionResult):
     pass
