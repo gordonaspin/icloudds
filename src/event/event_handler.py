@@ -3,6 +3,7 @@ import logging
 from threading import Lock
 import time
 import shutil
+from datetime import datetime, timedelta
 from timeloop import Timeloop
 from concurrent.futures import ThreadPoolExecutor, Future, wait, as_completed
 
@@ -50,6 +51,7 @@ class EventHandler(RegexMatchingEventHandler):
         self._icloud_dirty: bool = False
         self._refresh_lock: Lock = Lock()
         self._timeloop: Timeloop = ctx.timeloop
+        self._latest_refresh_time: datetime = datetime.now()
         self._event_queue: Queue = Queue()
         self._exception_events: UserList = UserList()
         self._suppressed_paths: UserList = UserList()
@@ -69,15 +71,18 @@ class EventHandler(RegexMatchingEventHandler):
             iCloudFolderModifiedEvent: self._handle_icloud_folder_modified_event
         }
     
-    def _refresh_icloud(self) -> bool:
-        logger.debug("refreshing iCloud...")
+    def _refresh_icloud(self, force=False):
+        if not force and (datetime.now() - self._latest_refresh_time) < self.ctx.icloud_refresh_period:
+            logger.debug("skipping icloud refresh, period not elapsed")
+            return
         with self._refresh_lock:
+            logger.debug("refreshing iCloud...")
             refresh = iCloudTree(ctx=self.ctx)
-            result = refresh.refresh()
-            if result:
+            if refresh.refresh():
                 logger.info("refresh is consistent")
                 self._refresh = refresh
                 self._icloud_dirty = False
+                self._latest_refresh_time = datetime.now()
             else:
                 logger.warning("refresh is inconsistent")
 
@@ -88,8 +93,8 @@ class EventHandler(RegexMatchingEventHandler):
             logger.debug("checking if icloud is dirty...")
             self._icloud_dirty = self._icloud.root_has_changed() or self._icloud.trash_has_changed()
         if self._icloud_dirty:
-            logger.info("iCloud Drive changes detected, scheduling refresh...")
-            self._refresh_icloud()
+            logger.info("iCloud Drive changes detected...")
+            self._refresh_icloud(force=True)
 
     def run(self) -> None:
         event_collector: list[QueuedEvent] = []
@@ -124,7 +129,7 @@ class EventHandler(RegexMatchingEventHandler):
                             if not (self._pending_futures or self._event_queue.qsize()):
                                 self._dump_state(local=self._local, icloud=self._icloud)
                                 logger.debug("No pending futures or events, proceeding with applying refresh")
-                                uploaded, downloaded, deleted, folders_created = self._apply_icloud_refresh(self._refresh)
+                                uploaded, downloaded, deleted, folders_created = self._apply_icloud_refresh()
                                 if any([uploaded, downloaded, deleted, folders_created]):
                                     logger.info(f"Background refresh applied, {uploaded} uploaded, {downloaded} downloaded, {deleted} deleted, {folders_created} folders created")
                                 else:
@@ -187,13 +192,13 @@ class EventHandler(RegexMatchingEventHandler):
                     for k, v in sorted_dict.items():
                         f.write(f"{k}: {v!r}\n")
 
-    def _apply_icloud_refresh(self, refresh: iCloudTree) -> tuple[int, int, int, int]:
-        downloaded_created: tuple[int, int] = self._sync_icloud(self._icloud, refresh)
-        common: tuple[int, int] = self._sync_common(self._icloud, refresh)
-        deleted = self._icloud.root.keys() - refresh.root.keys()
+    def _apply_icloud_refresh(self) -> tuple[int, int, int, int]:
+        downloaded, folders_created = self._sync_icloud(self._icloud, self._refresh)
+        uploaded, updated_downloaded = self._sync_common(self._icloud, self._refresh)
+        deleted = self._icloud.root.keys() - self._refresh.root.keys()
         for path in deleted:
             self._delete_local_file(path)
-        return (common[0], downloaded_created[0] + common[1], len(deleted), downloaded_created[1])
+        return (uploaded, downloaded + updated_downloaded, len(deleted), folders_created)
 
     def _delete_icloud_trash_items(self) -> int:
         deleted_count = 0
