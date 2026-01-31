@@ -4,7 +4,7 @@ from collections import UserDict, UserList
 import collections
 import threading
 
-class ThreadSafeDict(collections.UserDict):
+class ThreadSafeDict(UserDict):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._lock = threading.RLock() # Use RLock for reentrant locking
@@ -133,3 +133,55 @@ class ThreadSafeList(UserList):
     def __repr__(self):
         with self._lock:
             return f"ThreadSafeList({super().__repr__()})"
+
+class ThreadSafeSet:
+    """A thread-safe set implementation using a threading.Lock."""
+    def __init__(self, initial_data=None):
+        self._set = set(initial_data if initial_data is not None else [])
+        self._lock = threading.RLock()
+
+    def add(self, item):
+        """Add an item to the set in a thread-safe manner."""
+        with self._lock:
+            self._set.add(item)
+
+    def remove(self, item):
+        """Remove an item from the set in a thread-safe manner."""
+        with self._lock:
+            self._set.remove(item)
+
+    def update(self, items):
+        """Update the set with multiple items in a thread-safe manner."""
+        with self._lock:
+            self._set.update(items)
+
+    def contains(self, item):
+        """Check if an item is in the set in a thread-safe manner."""
+        with self._lock:
+            return item in self._set
+
+    def clear(self):
+        """Remove all items from the set in a thread-safe manner."""
+        with self._lock:
+            self._set.clear()
+
+    def __len__(self):
+        """Return the number of items in the set."""
+        with self._lock:
+            return len(self._set)
+            
+    def __iter__(self):
+        """Return a thread-safe iterator over a copy of the set."""
+        with self._lock:
+            # Iterate over a copy to prevent issues if the set is modified 
+            # by another thread during iteration.
+            return iter(set(self._set))
+        
+    def __enter__(self):
+        """Enables context manager support for manual locking blocks."""
+        self._lock.acquire()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Releases the lock after the context block finishes."""
+        self._lock.release()

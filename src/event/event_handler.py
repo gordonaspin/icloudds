@@ -19,7 +19,7 @@ from model.local_tree import LocalTree
 from model.file_info import FolderInfo, LocalFileInfo, LocalFolderInfo, iCloudFileInfo, iCloudFolderInfo
 from model.action_result import MkDir, Delete, Upload, Rename, Download, Nil
 from event.icloud_event import iCloudFolderModifiedEvent
-from model.thread_safe import ThreadSafeList
+from model.thread_safe import ThreadSafeList, ThreadSafeSet
 from event.icloud_event import QueuedEvent
 
 logger = logging.getLogger(__name__)  # __name__ is a common choice
@@ -88,7 +88,7 @@ class EventHandler(RegexMatchingEventHandler):
         self._suppressed_paths: ThreadSafeList = ThreadSafeList()
         self._limited_threadpool: ThreadPoolExecutor = ThreadPoolExecutor(max_workers=1)
         self._unlimited_threadpool: ThreadPoolExecutor = ThreadPoolExecutor(max_workers=ctx.max_workers)
-        self._pending_futures: set = set()
+        self._pending_futures: ThreadSafeSet = ThreadSafeSet()
         self._event_table = {
             FileCreatedEvent: self._handle_file_created_event,
             FileModifiedEvent: self._handle_file_modified_event,
@@ -131,7 +131,7 @@ class EventHandler(RegexMatchingEventHandler):
                     event_collector.append(event)
             except Empty:
                 # When the background refresh is not running, we can process events
-                with self._refresh_lock:
+                with self._refresh_lock, self._pending_futures:
                     # Dispatch collected events, collated by path
                     self._dispatch_events(event_collector=event_collector)
                     # Process any pending futures from event handling
@@ -163,7 +163,11 @@ class EventHandler(RegexMatchingEventHandler):
         if not force and (datetime.now() - self._latest_refresh_time) < self.ctx.icloud_refresh_period:
             logger.debug("skipping icloud refresh, period not elapsed")
             return
-        with self._refresh_lock:
+        with self._refresh_lock, self._pending_futures:
+            # We have the locks, but bail if there are pending futures or events
+            if self._pending_futures or len(self._event_queue) > 0:
+                logger.debug("skipping icloud refresh, pending futures or events exist")
+                return
             logger.debug("refreshing iCloud...")
             refresh = iCloudTree(ctx=self.ctx)
             if refresh.refresh():
@@ -178,7 +182,7 @@ class EventHandler(RegexMatchingEventHandler):
         Called by timeloop periodically to check if iCloud Drive has changed since the last refresh.
         Calls _refresh_icloud if changes are detected.
         """
-        if self._icloud_dirty:
+        if self._icloud_dirty or len(self._pending_futures) > 0 or len(self._event_queue) > 0:
             return
         with self._refresh_lock:
             logger.debug("checking if icloud is dirty...")
@@ -213,7 +217,7 @@ class EventHandler(RegexMatchingEventHandler):
             return
         logger.debug(f"Processing {len(self._pending_futures)} pending futures...")
         for _ in set(self._pending_futures):
-            done, self._pending_futures = as_completed(self._pending_futures), set()
+            done, self._pending_futures = as_completed(self._pending_futures), ThreadSafeSet()
             for future in done:
                 result = future.result()
                 if isinstance(result, list) and all(isinstance(f, Future) for f in result):
@@ -230,7 +234,10 @@ class EventHandler(RegexMatchingEventHandler):
         if not result.success:
             logger.error(f"{result}: {result.exception}")
             if result.fn is not None:
-                self._pending_futures.add(self._unlimited_threadpool.submit(result.fn, *result.args))
+                if isinstance(result, Download):
+                    self._pending_futures.add(self._unlimited_threadpool.submit(result.fn, *result.args))
+                else:
+                    self._pending_futures.add(self._limited_threadpool.submit(result.fn, *result.args))
         else:
             if not isinstance(result, Nil):
                 logger.info(f"{result}")
@@ -445,7 +452,7 @@ class EventHandler(RegexMatchingEventHandler):
         if parent is not None and cfi is not None:
             try:
                 # Delete the file from iCloud Drive
-                logger.info(f"Local {'file' if isinstance(cfi, iCloudFileInfo) else 'folder'} {event.src_path} deleted, deleting iCloud Drive item")
+                logger.debug(f"Local {'file' if isinstance(cfi, iCloudFileInfo) else 'folder'} {event.src_path} deleted, deleting iCloud Drive item")
                 self._pending_futures.add(self._limited_threadpool.submit(self._icloud.delete, event.src_path, cfi))
                 self._local.root.pop(event.src_path)
             except Exception as e:

@@ -307,7 +307,7 @@ class iCloudTree(BaseTree):
         Returns an ActionResult indicating success or failure."""
         name = threading.current_thread().name
         threading.current_thread().name = f"create icloud folders {path}"
-        result = Nil()
+        result = None
         try:
             folder_path = BaseTree.ROOT_FOLDER_NAME
             _path = folder_path
@@ -316,16 +316,18 @@ class iCloudTree(BaseTree):
             for folder_name in path.split(os.sep):
                 folder_path = os.path.normpath(os.path.join(folder_path, folder_name))
                 if folder_path not in self._root:
-                    logger.info(f"iCloud Drive creating parent folder {folder_path}...")
+                    logger.debug(f"iCloud Drive creating parent folder {folder_path}...")
                     parent_node.mkdir(folder_name)
                     self.process_folder(root=self._root, path=_path, ignore=True,recursive=False)
                     parent = self._root[folder_path]
                     parent_node = parent.node
                     _path = folder_path
+                    result = MkDir(success=True, path=path)
                 else:
                     parent_node = self._root[folder_path].node
                     _path = folder_path
-            result = MkDir(success=True, path=path)
+            if result is None:
+                result = Nil()
         except Exception as e:
             logger.error(f"Exception in create_icloud_folders {e}")
             self.handle_drive_exception(e)
