@@ -3,6 +3,7 @@ from enum import Enum, auto
 # For retrying connection after timeouts and errors
 
 AUTHENTICATION_MAX_RETRIES = 3
+MAX_RETRIES = 3
 DOWNLOAD_MEDIA_CHUNK_SIZE = 1024*1024
 RETRY_SECONDS = 5
 ICLOUD_CHECK_SECONDS = 20

@@ -8,7 +8,6 @@ class ActionResult:
     fn: Callable = None
     args: list = None
     exception: Exception = None
-    name = "ActionResult"
 
     def __str__(self):
         return f"{self.__class__.__name__.lower()} {'succeeded' if self.success else 'failed'} {self.path}"

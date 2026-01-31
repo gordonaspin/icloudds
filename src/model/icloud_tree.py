@@ -192,7 +192,7 @@ class iCloudTree(BaseTree):
                 if self.ignore(path, isinstance(root[path], iCloudFolderInfo)):
                     root.pop(path)
 
-    def delete(self, path: str, lfi: iCloudFileInfo) -> Delete:
+    def delete(self, path: str, lfi: iCloudFileInfo, retry=constants.MAX_RETRIES) -> Delete:
         """
         Delete a file or folder from iCloud Drive.
         Updates the tree structure accordingly.
@@ -215,12 +215,12 @@ class iCloudTree(BaseTree):
             except Exception as e:
                 logger.error(f"Exception in delete {e}")
                 self.handle_drive_exception(e)
-                result = Delete(success=False, path=path, fn=self.delete, args=[path, lfi], exception=e)
+                result = Delete(success=False, path=path, fn=self.delete, args=[path, lfi, retry-1], exception=e)
             finally:
                 threading.current_thread().name = name
         return result
 
-    def rename(self, path: str, dest_path: str) -> Rename:
+    def rename(self, path: str, dest_path: str, retry=constants.MAX_RETRIES) -> Rename:
         """
         Rename a file or folder in iCloud Drive.
         Updates the tree structure accordingly.
@@ -239,16 +239,17 @@ class iCloudTree(BaseTree):
         except Exception as e:
             logger.error(f"Exception in rename {e}")
             self.handle_drive_exception(e)
-            result = Rename(success=False, path=path, fn=self.rename, args=[path, dest_path], exception=e)
+            result = Rename(success=False, path=path, fn=self.rename, args=[path, dest_path, retry-1], exception=e)
         finally:
             threading.current_thread().name = name
         return result
     
-    def upload(self, path: str, lfi: LocalFileInfo) -> Upload:
+    def upload(self, path: str, lfi: LocalFileInfo, retry=constants.MAX_RETRIES) -> Upload:
         """
         Upload a local file to iCloud Drive.
         Preserves file metadata such as modification and creation times.
         Returns an ActionResult indicating success or failure."""
+
         name = threading.current_thread().name
         threading.current_thread().name = f"upload {path}"
         result = Nil()
@@ -261,12 +262,12 @@ class iCloudTree(BaseTree):
         except Exception as e:
             logger.error(f"Exception in upload {e}")
             self.handle_drive_exception(e)
-            result = Upload(success=False, path=path, fn=self.upload, args=[path, lfi], exception=e)
+            result = Upload(success=False, path=path, fn=self.upload, args=[path, lfi, retry-1], exception=e)
         finally:
             threading.current_thread().name = name
         return result
     
-    def download(self, path: str, cfi: iCloudFileInfo, apply_after: Callable[[str], str]) -> Download:
+    def download(self, path: str, cfi: iCloudFileInfo, apply_after: Callable[[str], str], retry=constants.MAX_RETRIES) -> Download:
         """
         Download a file from iCloud Drive.
         Preserves file metadata such as modification and creation times.
@@ -296,12 +297,12 @@ class iCloudTree(BaseTree):
         except Exception as e:
             logger.error(f"Exception in download {e}")
             self.handle_drive_exception(e)
-            result = Download(success=False, path=path, fn=self.download, args=[path, cfi, apply_after], exception=e)
+            result = Download(success=False, path=path, fn=self.download, args=[path, cfi, apply_after, retry-1], exception=e)
         finally:
             threading.current_thread().name = name
         return result
     
-    def create_icloud_folders(self, path: str) -> iCloudFolderInfo:
+    def create_icloud_folders(self, path: str, retry=constants.MAX_RETRIES) -> iCloudFolderInfo:
         """
         Create intermediate folders in iCloud Drive for the given path.
         Returns an ActionResult indicating success or failure."""
@@ -331,7 +332,7 @@ class iCloudTree(BaseTree):
         except Exception as e:
             logger.error(f"Exception in create_icloud_folders {e}")
             self.handle_drive_exception(e)
-            result = MkDir(success=False, path=path, fn=self.create_icloud_folders, args=[path], exception=e)
+            result = MkDir(success=False, path=path, fn=self.create_icloud_folders, args=[path, retry-1], exception=e)
         finally:
             threading.current_thread().name = name
         return result

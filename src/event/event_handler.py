@@ -165,7 +165,7 @@ class EventHandler(RegexMatchingEventHandler):
             return
         with self._refresh_lock, self._pending_futures:
             # We have the locks, but bail if there are pending futures or events
-            if self._pending_futures or len(self._event_queue) > 0:
+            if self._pending_futures or self._event_queue.qsize() > 0:
                 logger.debug("skipping icloud refresh, pending futures or events exist")
                 return
             logger.debug("refreshing iCloud...")
@@ -182,7 +182,7 @@ class EventHandler(RegexMatchingEventHandler):
         Called by timeloop periodically to check if iCloud Drive has changed since the last refresh.
         Calls _refresh_icloud if changes are detected.
         """
-        if self._icloud_dirty or len(self._pending_futures) > 0 or len(self._event_queue) > 0:
+        if self._icloud_dirty or len(self._pending_futures) > 0 or self._event_queue.qsize() > 0:
             return
         with self._refresh_lock:
             logger.debug("checking if icloud is dirty...")
@@ -234,10 +234,15 @@ class EventHandler(RegexMatchingEventHandler):
         if not result.success:
             logger.error(f"{result}: {result.exception}")
             if result.fn is not None:
-                if isinstance(result, Download):
-                    self._pending_futures.add(self._unlimited_threadpool.submit(result.fn, *result.args))
+                retry = result.args[-1]
+                if retry:
+                    logger.debug(f"Retrying {result} {retry} retries left")
+                    if isinstance(result, Download):
+                        self._pending_futures.add(self._unlimited_threadpool.submit(result.fn, *result.args))
+                    else:
+                        self._pending_futures.add(self._limited_threadpool.submit(result.fn, *result.args))
                 else:
-                    self._pending_futures.add(self._limited_threadpool.submit(result.fn, *result.args))
+                    logger.error(f"{result} has exhausted all retries, giving up")
         else:
             if not isinstance(result, Nil):
                 logger.info(f"{result}")
