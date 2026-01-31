@@ -9,12 +9,22 @@ class ActionResult:
     args: list = None
     exception: Exception = None
 
-class DownloadActionResult(ActionResult):
+class NoAction(ActionResult):
+    def __init__(self):
+        self.success = True
+        self.path = ""
+
+class DownloadAction(ActionResult):
     pass
 
-class UploadActionResult(ActionResult):
+class UploadAction(ActionResult):
     pass
 
-class ProcessFolderResult(ActionResult):
+class RenameAction(ActionResult):
     pass
 
+class DeleteAction(ActionResult):
+    pass
+
+class CreateFolderAction(ActionResult):
+    pass

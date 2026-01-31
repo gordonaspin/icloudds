@@ -7,6 +7,7 @@ from datetime import timedelta
 from logger.logger import setup_logging, KeywordFilter
 from watchdog.observers import Observer
 import importlib.metadata
+import timeloop
 
 import constants
 from context import Context
@@ -14,6 +15,7 @@ from event.event_handler import EventHandler
 
 name = "icloudds"
 logger = logging.getLogger(name)  # __name__ is a common choice
+tl = timeloop.Timeloop()
 
 CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"], max_content_width=120)
 @click.command(context_settings=CONTEXT_SETTINGS, options_metavar="<options>", no_args_is_help=True)
@@ -29,14 +31,14 @@ CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"], max_content_width=12
 @click.option("--retry-period",         help="Period in seconds to retry failed events", type=click.IntRange(min=constants.RETRY_SECONDS), metavar="<seconds>", default=constants.RETRY_SECONDS, show_default=True)
 @click.option("--icloud-check-period",  help="Period in seconds to look for iCloud changes", type=click.IntRange(min=constants.ICLOUD_CHECK_SECONDS), metavar="<seconds>", default=constants.ICLOUD_CHECK_SECONDS, show_default=True)
 @click.option("--icloud-refresh-period", help="Period in seconds to perform full iCloud refresh", type=click.IntRange(min=constants.ICLOUD_REFRESH_SECONDS), metavar="<seconds>", default=constants.ICLOUD_REFRESH_SECONDS, show_default=True)
-@click.option("--download-workers",     help="Number of download workers", type=click.IntRange(min=1), metavar="<workers>", default=os.process_cpu_count(), show_default=True)
+@click.option("--max-workers",     help="Maximum number of concurrent workers", type=click.IntRange(min=1), metavar="<workers>", default=os.process_cpu_count(), show_default=True)
 @version_option(package_name='icloudds')
 
 def main(directory: str, username: str, password: str, cookie_directory: str,
          ignore_icloud: str, ignore_local: str,
          include_icloud: str, include_local: str, logging_config: str,
          retry_period: int, icloud_check_period: int, icloud_refresh_period: int,
-         download_workers: int
+         max_workers: int
          ):
     
     ignore_icloud  = [line.strip() for line in open(ignore_icloud).readlines()  if not line.startswith('#')] if ignore_icloud and os.path.isfile(ignore_icloud) else []
@@ -59,8 +61,8 @@ def main(directory: str, username: str, password: str, cookie_directory: str,
                       retry_period=timedelta(seconds=retry_period),
                       icloud_check_period=timedelta(seconds=icloud_check_period),
                       icloud_refresh_period=timedelta(seconds=icloud_refresh_period),
-                      upload_workers=1,
-                      download_workers=download_workers)
+                      max_workers=max_workers,
+                      timeloop=tl)
     
     logger.info(f"{name} {importlib.metadata.version("icloudds")}")
 

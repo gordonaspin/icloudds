@@ -16,8 +16,7 @@ import constants as constants
 from icloud.authenticate import authenticate
 from model.base_tree import BaseTree
 from model.file_info import BaseInfo, LocalFileInfo, iCloudFileInfo, iCloudFolderInfo
-from model.action_result import DownloadActionResult, UploadActionResult
-
+from model.action_result import DownloadAction, NoAction, UploadAction, DeleteAction, CreateFolderAction, RenameAction
 logger = logging.getLogger(__name__)
 
 class iCloudMismatchException(Exception):
@@ -123,28 +122,71 @@ class iCloudTree(BaseTree):
                 if self.ignore(path, isinstance(root[path], iCloudFolderInfo)):
                     root.pop(path)
 
-    def upload(self, path: str, lfi: LocalFileInfo) -> UploadActionResult:
+    def delete(self, path: str, lfi: iCloudFileInfo) -> DeleteAction:
         name = threading.current_thread().name
-        threading.current_thread().name = f"upload {path}"
-        result = UploadActionResult(success=True, path=path)
-        try:
-            parent_path: str = os.path.normpath(os.path.dirname(path))
+        threading.current_thread().name = f"delete {path}"
+        result = NoAction()
+        parent: iCloudFolderInfo = self.root.get(os.path.normpath(os.path.dirname(path)), None)
+        cfi: iCloudFileInfo | iCloudFolderInfo= self.root.get(path, None)
+        if parent is not None and cfi is not None:
+            parent_node: DriveNode = parent.node
+            child_node: DriveNode = cfi.node
+            try:
+                res = child_node.delete()
+                status = res['items'][0]['status']
+                logger.debug(f"iCloud Drive deleted {path} result: {status}")
+                parent_node.remove(child_node)
+                self.root.pop(path)
+                result = DeleteAction(success=True, path=path)
+            except Exception as e:
+                logger.error(f"Exception in delete {e}")
+                self.handle_drive_exception(e)
+                result = DeleteAction(success=False, path=path, fn=self.delete, args=[path, lfi], exception=e)
+            finally:
+                threading.current_thread().name = name
+        return result
 
-            parent_node: DriveNode = self._root[parent_path].node
-            with open(os.path.join(self._root_path, path), 'rb') as f:
-                parent_node.upload(f, mtime=lfi.modified_time.timestamp(), ctime=lfi.created_time.timestamp())
+    def rename(self, path: str, dest_path: str) -> RenameAction:
+        name = threading.current_thread().name
+        threading.current_thread().name = f"rename {path}"
+        result = NoAction()
+        try:
+            cfi = self.root.get(path, None)
+            if cfi is not None:
+                cfi.node.rename(os.path.basename(dest_path))
+                self.root.pop(path)
+                self.root[dest_path] = cfi
+                result = RenameAction(success=True, path=path)
         except Exception as e:
-            logger.error(f"Exception in upload {e}")
+            logger.error(f"Exception in rename {e}")
             self.handle_drive_exception(e)
-            result = UploadActionResult(success=False, path=path, fn=self.upload, args=[str, lfi], exception=e)
+            result = RenameAction(success=False, path=path, fn=self.rename, args=[path, dest_path], exception=e)
         finally:
             threading.current_thread().name = name
         return result
     
-    def download(self, path: str, cfi: iCloudFileInfo, apply_after: Callable[[str], str]) -> DownloadActionResult:
+    def upload(self, path: str, lfi: LocalFileInfo) -> UploadAction:
+        name = threading.current_thread().name
+        threading.current_thread().name = f"upload {path}"
+        result = NoAction()
+        try:
+            parent_path: str = os.path.normpath(os.path.dirname(path))
+            parent_node: DriveNode = self._root[parent_path].node
+            with open(os.path.join(self._root_path, path), 'rb') as f:
+                parent_node.upload(f, mtime=lfi.modified_time.timestamp(), ctime=lfi.created_time.timestamp())
+            result = UploadAction(success=True, path=path)
+        except Exception as e:
+            logger.error(f"Exception in upload {e}")
+            self.handle_drive_exception(e)
+            result = UploadAction(success=False, path=path, fn=self.upload, args=[path, lfi], exception=e)
+        finally:
+            threading.current_thread().name = name
+        return result
+    
+    def download(self, path: str, cfi: iCloudFileInfo, apply_after: Callable[[str], str]) -> DownloadAction:
         name = threading.current_thread().name
         threading.current_thread().name = f"download {path}"
-        result = DownloadActionResult(success=True, path=path)
+        result = NoAction()
         try:
             file_path = os.path.join(self._root_path, os.path.normpath(path))
             parent_path: str = os.path.normpath(os.path.dirname(path))
@@ -161,15 +203,19 @@ class iCloudTree(BaseTree):
             logger.debug(f"setting {file_path} modified_time to {cfi.modified_time}")
             os.utime(file_path, (cfi.modified_time.timestamp(), cfi.modified_time.timestamp()))
             apply_after(path)
+            result = DownloadAction(success=True, path=path)
         except Exception as e:
             logger.error(f"Exception in download {e}")
             self.handle_drive_exception(e)
-            result = DownloadActionResult(success=False, path=path, fn=self.upload, args=[path, cfi, apply_after], exception=e)
+            result = DownloadAction(success=False, path=path, fn=self.download, args=[path, cfi, apply_after], exception=e)
         finally:
             threading.current_thread().name = name
         return result
     
     def create_icloud_folders(self, path: str) -> iCloudFolderInfo:
+        name = threading.current_thread().name
+        threading.current_thread().name = f"create icloud folders {path}"
+        result = NoAction()
         try:
             folder_path = BaseTree.ROOT_FOLDER_NAME
             _path = folder_path
@@ -187,11 +233,15 @@ class iCloudTree(BaseTree):
                 else:
                     parent_node = self._root[folder_path].node
                     _path = folder_path
-            parent = self._root[_path]
-            return parent
+
+            result = CreateFolderAction(success=True, path=path)
         except Exception as e:
             logger.error(f"Exception in create_icloud_folders {e}")
             self.handle_drive_exception(e)
+            result = CreateFolderAction(success=False, path=path, fn=self.create_icloud_folders, args=[path], exception=e)
+        finally:
+            threading.current_thread().name = name
+        return result
 
     @property
     def root_count(self) -> int:

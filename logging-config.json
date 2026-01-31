@@ -1,7 +1,7 @@
 {
   "url": "https://github.com/mCodingLLC/VideosSampleCode/blob/master/videos/135_modern_logging/",
   "version": 1,
-  "disable_existing_loggers": false,
+  "disable_existing_loggers": true,
   "formatters": {
     "production": {
       "format": "%(asctime)s.%(msecs)03d %(levelname)s %(message)s",
@@ -24,7 +24,7 @@
   "handlers": {
     "stderr": {
       "class": "logging.StreamHandler",
-      "level": "INFO",
+      "level": "DEBUG",
       "formatter": "production",
       "stream": "ext://sys.stderr",
       "filters": ["KeywordFilter"]
@@ -49,6 +49,13 @@
     },
     "icloudds": {
       "level": "DEBUG",
+      "handlers": [
+        "stderr",
+        "file"
+      ]
+    },
+    "timeloop": {
+      "level": "INFO",
       "handlers": [
         "stderr",
         "file"
