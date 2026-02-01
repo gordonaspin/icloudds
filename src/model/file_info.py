@@ -21,7 +21,6 @@ class BaseInfo:
         elif platform.system() == "Darwin":
             return obj.replace(microsecond=0)
 
-
 class FolderInfo(BaseInfo):
     """
     Base class for folder information.
@@ -47,7 +46,9 @@ class LocalFolderInfo(FolderInfo):
     Stores the folder name and inherits from FolderInfo.
     """
     name: str
-
+    @override
+    def __repr__(self):
+        return f"FolderInfo({self.name})"
 
 @dataclass
 class LocalFileInfo(FileInfo):
@@ -66,6 +67,10 @@ class LocalFileInfo(FileInfo):
         self.size: int = stat_entry.st_size
         self.created_time: datetime = self._round_seconds(datetime.fromtimestamp(stat_entry.st_ctime, tz=timezone.utc))
         self.modified_time: datetime = self._round_seconds(datetime.fromtimestamp(stat_entry.st_mtime, tz=timezone.utc))
+    
+    @override
+    def __repr__(self):
+        return f"FileInfo({self.name}, size={self.size}, modified={self.modified_time})"
     
 @dataclass
 class iCloudFolderInfo(FolderInfo):
@@ -100,6 +105,10 @@ class iCloudFolderInfo(FolderInfo):
     def number_of_items(self) -> int:
         return self.node.data['numberOfItems']
 
+    @override
+    def __repr__(self):
+        return f"FolderInfo({self.name})"
+    
 @dataclass
 class iCloudFileInfo(FileInfo):
     """
@@ -133,3 +142,7 @@ class iCloudFileInfo(FileInfo):
     @property
     def created_time(self) -> datetime:
         return _date_to_utc(self.node.data.get("dateCreated")).replace(tzinfo=timezone.utc)  # Folder does not have date
+    
+    @override
+    def __repr__(self):
+        return f"FileInfo({self.name}, size={self.size}, modified={self.modified_time})"
