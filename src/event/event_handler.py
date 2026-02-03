@@ -1,7 +1,7 @@
 import os
 import logging
 from threading import Lock
-import time
+from time import time, sleep, monotonic
 import shutil
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, Future, as_completed
@@ -82,6 +82,7 @@ class EventHandler(RegexMatchingEventHandler):
         self._refresh_lock: Lock = Lock()
         self._timeloop: Timeloop = ctx.timeloop
         self._latest_refresh_time: datetime = datetime.now()
+        self._refresh_is_running = False
         self._event_queue: Queue = Queue()
         self._exception_events: ThreadSafeList = ThreadSafeList()
         self._suppressed_paths: ThreadSafeSet = ThreadSafeSet()
@@ -116,7 +117,7 @@ class EventHandler(RegexMatchingEventHandler):
                 item = queue.get(timeout=poll_timeout)
             except Empty:
                 # Queue is currently empty
-                now = time.monotonic()
+                now = monotonic()
                 if empty_since is None:
                     empty_since = now
                 elif now - empty_since >= empty_timeout:
@@ -182,24 +183,28 @@ class EventHandler(RegexMatchingEventHandler):
         Called by timeloop periodically to refresh iCloud Drive tree if the refresh period has elapsed.
         Does not run if a forced refresh was recently performed.
         """
+        if self._refresh_is_running:
+            return
         if not force and (datetime.now() - self._latest_refresh_time) < self.ctx.icloud_refresh_period:
             logger.debug("skipping icloud refresh, period not elapsed")
-            return
-        with self._refresh_lock, self._pending_futures:
-            # We have the locks, but bail if there are pending futures or events
-            if self._pending_futures or self._event_queue.qsize() > 0:
-                logger.debug("skipping icloud refresh, pending futures or events exist")
-                return
-            logger.debug("refreshing iCloud...")
-            refresh = iCloudTree(ctx=self.ctx)
-            if refresh.refresh():
-                logger.debug("refresh is consistent")
-                self._refresh = refresh
-                self._icloud_dirty = False
-            else:
-                logger.warning("refresh is inconsistent")
-            self._latest_refresh_time = datetime.now()
+        else:                
+            while self._pending_futures or self._event_queue.qsize() > 0:
+                logger.debug(f"icloud refresh waiting on {len(self._pending_futures)} pending futures or {self._event_queue.qsize()} events to quiesce")
+                sleep(5)
                 
+            with self._refresh_lock, self._pending_futures:
+                # We have the locks
+                logger.debug("refreshing iCloud...")
+                refresh = iCloudTree(ctx=self.ctx)
+                if refresh.refresh():
+                    logger.debug("refresh is consistent")
+                    self._refresh = refresh
+                    self._icloud_dirty = False
+                else:
+                    logger.warning("refresh is inconsistent")
+                self._latest_refresh_time = datetime.now()
+        self._refresh_is_running = False
+        
     def _is_icloud_dirty(self):
         """
         Called by timeloop periodically to check if iCloud Drive has changed since the last refresh.
@@ -390,6 +395,7 @@ class EventHandler(RegexMatchingEventHandler):
         """
         lfi = self._local.root.get(path, None)
         if lfi is not None:
+            self._suppressed_paths.add(path)
             fs_object_path = os.path.join(self._absolute_directory, path)
             if isinstance(lfi, LocalFolderInfo):
                 logger.info(f"deleting local folder {path}")
@@ -639,7 +645,7 @@ class EventHandler(RegexMatchingEventHandler):
             return
         
         qe = QueuedEvent(
-            timestamp=time.time(),
+            timestamp=time(),
             event = event)
         self._event_queue.put(qe)
     

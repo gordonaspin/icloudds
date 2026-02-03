@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+
 from watchdog.events import DirModifiedEvent, FileSystemEvent
 
 class iCloudFolderModifiedEvent(DirModifiedEvent):

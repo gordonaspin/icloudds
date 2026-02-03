@@ -4,11 +4,10 @@ import click
 import logging
 
 import pyicloud
-import constants as constants
 import pyicloud.utils as utils
-from pyicloud.exceptions import PyiCloud2SARequiredException
-from pyicloud.exceptions import PyiCloudFailedLoginException
-from pyicloud.exceptions import PyiCloudNoStoredPasswordAvailableException
+from pyicloud.exceptions import PyiCloud2SARequiredException, PyiCloudFailedLoginException, PyiCloudNoStoredPasswordAvailableException
+
+import constants as constants
 
 def authenticate(
     username,

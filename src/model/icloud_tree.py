@@ -4,20 +4,20 @@ import traceback
 from typing import Callable, override 
 from urllib3 import disable_warnings
 from urllib3.exceptions import InsecureRequestWarning
-disable_warnings(category=InsecureRequestWarning)
 from concurrent.futures import ThreadPoolExecutor, Future, as_completed
-import threading
+
 import pyicloud.services.drive
 from pyicloud.services.drive import DriveNode, CLOUD_DOCS_ZONE_ID_ROOT, CLOUD_DOCS_ZONE_ID_TRASH
 from pyicloud.exceptions import PyiCloudAPIResponseException
-
 
 from context import Context
 import constants as constants
 from icloud.authenticate import authenticate
 from model.base_tree import BaseTree
-from model.file_info import BaseInfo, LocalFileInfo, iCloudFileInfo, iCloudFolderInfo
-from model.action_result import ActionResult, Download, Upload, Delete, MkDir, Rename, Move, Refresh, Nil
+from model.file_info import LocalFileInfo, iCloudFileInfo, iCloudFolderInfo
+from model.action_result import Download, Upload, Delete, MkDir, Rename, Move, Refresh, Nil
+
+disable_warnings(category=InsecureRequestWarning)
 logger = logging.getLogger(__name__)
 
 class iCloudMismatchException(Exception):
@@ -146,18 +146,14 @@ class iCloudTree(BaseTree):
             self._root[path] = iCloudFolderInfo(name=os.path.basename(path), stat_entry=stat_entry)
         return self._root.get(path, None)
 
-    def process_folder(self, root=None, path=None, recursive=False, ignore=True, executor=None) -> ActionResult|list[Future]:
+    def process_folder(self, root=None, path=None, recursive=False, ignore=True, executor=None) -> Refresh|list[Future]:
         """
         Process a folder in iCloud Drive, populating its children in the tree structure.
         Can be run recursively to process subfolders.
         Supports multi-threaded execution using ThreadPoolExecutor.
         Applies ignore/include rules as specified.
-        Returns a list of Future objects for further processing or an ActionResult (Refresh).
+        Returns a list of Future objects for further processing or a Refresh.
         """
-        threadname = threading.current_thread().name
-        if executor:
-            threading.current_thread().name = f"process_folder {"root" if root is self._root else "trash"} {path}"
-
         relative_path = os.path.normpath(path)
         futures = []
         children = root[path].node.get_children(force=True)
@@ -182,7 +178,6 @@ class iCloudTree(BaseTree):
             else:
                 logger.debug(f"iCloud Drive {"root" if root is self._root else "trash"} did not process {child.type} {os.path.join(relative_path, child.name)}")
     
-        threading.current_thread().name = threadname
         return futures if len(futures) > 0 else Refresh(path=path, success=True)
 
     def _remove_ignored_items(self):
@@ -198,9 +193,7 @@ class iCloudTree(BaseTree):
         """
         Delete a file or folder from iCloud Drive.
         Updates the tree structure accordingly.
-        Returns an ActionResult indicating success or failure."""
-        name = threading.current_thread().name
-        threading.current_thread().name = f"delete {path}"
+        Returns an Delete indicating success or failure."""
         result = Nil()
         parent: iCloudFolderInfo = self.root.get(os.path.normpath(os.path.dirname(path)), None)
         cfi: iCloudFileInfo | iCloudFolderInfo= self.root.get(path, None)
@@ -221,18 +214,14 @@ class iCloudTree(BaseTree):
                 logger.error(f"Exception in delete {e}")
                 self.handle_drive_exception(e)
                 result = Delete(success=False, path=path, fn=self.delete, args=[path, lfi, retry-1], exception=e)
-            finally:
-                threading.current_thread().name = name
         return result
 
-    def move(self, path: str, dest_path: str, retry=constants.MAX_RETRIES) -> Rename:
+    def move(self, path: str, dest_path: str, retry=constants.MAX_RETRIES) -> Move:
         """
         Move a file or folder in iCloud Drive.
         Updates the tree structure accordingly.
-        Returns an ActionResult indicating success or failure.
+        Returns an Move indicating success or failure.
         """
-        name = threading.current_thread().name
-        threading.current_thread().name = f"move {path}"
         result = Nil()
         try:
             cfi = self.root.get(path, None)
@@ -246,18 +235,14 @@ class iCloudTree(BaseTree):
             logger.error(f"Exception in rename {e}")
             self.handle_drive_exception(e)
             result = Move(success=False, path=path, dest_path=dest_path, fn=self.rename, args=[path, dest_path, retry-1], exception=e)
-        finally:
-            threading.current_thread().name = name
         return result
 
     def rename(self, path: str, dest_path: str, retry=constants.MAX_RETRIES) -> Rename:
         """
         Rename a file or folder in iCloud Drive.
         Updates the tree structure accordingly.
-        Returns an ActionResult indicating success or failure.
+        Returns an Rename indicating success or failure.
         """
-        name = threading.current_thread().name
-        threading.current_thread().name = f"rename {path}"
         result = Nil()
         try:
             cfi = self.root.get(path, None)
@@ -270,18 +255,13 @@ class iCloudTree(BaseTree):
             logger.error(f"Exception in rename {e}")
             self.handle_drive_exception(e)
             result = Rename(success=False, path=path, fn=self.rename, args=[path, dest_path, retry-1], exception=e)
-        finally:
-            threading.current_thread().name = name
         return result
     
     def upload(self, path: str, lfi: LocalFileInfo, retry=constants.MAX_RETRIES) -> Upload:
         """
         Upload a local file to iCloud Drive.
         Preserves file metadata such as modification and creation times.
-        Returns an ActionResult indicating success or failure."""
-
-        name = threading.current_thread().name
-        threading.current_thread().name = f"upload {path}"
+        Returns an Upload indicating success or failure."""
         result = Nil()
         try:
             parent_path: str = os.path.normpath(os.path.dirname(path))
@@ -293,8 +273,6 @@ class iCloudTree(BaseTree):
             logger.error(f"Exception in upload {e}")
             self.handle_drive_exception(e)
             result = Upload(success=False, path=path, fn=self.upload, args=[path, lfi, retry-1], exception=e)
-        finally:
-            threading.current_thread().name = name
         return result
     
     def download(self, path: str, cfi: iCloudFileInfo, apply_after: Callable[[str], str], retry=constants.MAX_RETRIES) -> Download:
@@ -302,10 +280,8 @@ class iCloudTree(BaseTree):
         Download a file from iCloud Drive.
         Preserves file metadata such as modification and creation times.
         Calls apply_after callback after successful download.
-        Returns an ActionResult indicating success or failure.
+        Returns an Download indicating success or failure.
         """
-        name = threading.current_thread().name
-        threading.current_thread().name = f"download {path}"
         result = Nil()
         try:
             file_path = os.path.join(self._root_path, os.path.normpath(path))
@@ -328,16 +304,12 @@ class iCloudTree(BaseTree):
             logger.error(f"Exception in download {e}")
             self.handle_drive_exception(e)
             result = Download(success=False, path=path, fn=self.download, args=[path, cfi, apply_after, retry-1], exception=e)
-        finally:
-            threading.current_thread().name = name
         return result
     
-    def create_icloud_folders(self, path: str, retry=constants.MAX_RETRIES) -> iCloudFolderInfo:
+    def create_icloud_folders(self, path: str, retry=constants.MAX_RETRIES) -> MkDir|Nil:
         """
         Create intermediate folders in iCloud Drive for the given path.
-        Returns an ActionResult indicating success or failure."""
-        name = threading.current_thread().name
-        threading.current_thread().name = f"create icloud folders {path}"
+        Returns a MkDir or Nil indicating success or failure."""
         result = None
         try:
             folder_path = BaseTree.ROOT_FOLDER_NAME
@@ -363,8 +335,6 @@ class iCloudTree(BaseTree):
             logger.error(f"Exception in create_icloud_folders {e}")
             self.handle_drive_exception(e)
             result = MkDir(success=False, path=path, fn=self.create_icloud_folders, args=[path, retry-1], exception=e)
-        finally:
-            threading.current_thread().name = name
         return result
 
     @property
@@ -381,8 +351,6 @@ class iCloudTree(BaseTree):
         """
         Check if the iCloud Drive root folder has changed by comparing file counts.
         Returns True if the root folder has changed, False otherwise."""
-        name = threading.current_thread().name
-        threading.current_thread().name = "check root"
         pre_count: int = 0
         post_count: int = 0
         try:
@@ -395,16 +363,12 @@ class iCloudTree(BaseTree):
         except Exception as e:
             logger.warning(f"iCloud Drive get fileCount failed: {e}")
             return False
-        finally:
-            threading.current_thread().name = name
         return pre_count != post_count            
  
     def trash_has_changed(self) -> bool:
         """
         Check if the iCloud Drive trash folder has changed by comparing item counts.
         """
-        name = threading.current_thread().name
-        threading.current_thread().name = "check trash"
         pre_count: int = 0
         post_count: int = 0
         try:
@@ -417,8 +381,6 @@ class iCloudTree(BaseTree):
         except Exception as e:
             logger.warning(f"iCloud Drive trash refresh failed: {e}")
             return False
-        finally:
-            threading.current_thread().name = name
         return pre_count != post_count
 
     def handle_drive_exception(self, e: Exception) -> None:

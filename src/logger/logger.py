@@ -4,21 +4,19 @@ import datetime as dt
 import json
 import logging
 import logging.config
-import pathlib
 import sys
 import threading
 import traceback
 from typing import override
-from context import Context
+
 import constants as constants
 
 def setup_logging(logging_config: str) -> str:
-    config_file = pathlib.Path(logging_config)
     try:
-        with open(config_file) as f_in:
+        with open(logging_config) as f_in:
             config = json.load(f_in)
     except FileNotFoundError as e:
-        print(f"Logging config file {config_file} not found")
+        print(f"Logging config file {logging_config} not found")
         sys.exit(constants.ExitCode.EXIT_CLICK_USAGE.value)
 
     for _, handler in config['handlers'].items():

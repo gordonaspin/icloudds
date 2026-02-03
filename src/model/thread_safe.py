@@ -1,13 +1,10 @@
 from threading import RLock
 from collections import UserDict, UserList
 
-import collections
-import threading
-
 class ThreadSafeDict(UserDict):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._lock = threading.RLock() # Use RLock for reentrant locking
+        self._lock = RLock() # Use RLock for reentrant locking
             
     def get(self, key, default=None):
         with self._lock:
@@ -138,7 +135,7 @@ class ThreadSafeSet:
     """A thread-safe set implementation using a threading.Lock."""
     def __init__(self, initial_data=None):
         self._set = set(initial_data if initial_data is not None else [])
-        self._lock = threading.RLock()
+        self._lock = RLock()
 
     def add(self, item):
         """Add an item to the set in a thread-safe manner."""
