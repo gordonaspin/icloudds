@@ -72,8 +72,8 @@ class LocalTree(BaseTree):
     def refresh(self):
         """Refresh the local file system tree by scanning the root directory."""
         logger.debug(f"Refreshing Local Drive {self._root_path}...")
-        if not self._root:
-            self._root[BaseTree.ROOT_FOLDER_NAME] = LocalFolderInfo(BaseTree.ROOT_FOLDER_NAME)
+        self._root.clear()
+        self._root[BaseTree.ROOT_FOLDER_NAME] = LocalFolderInfo(BaseTree.ROOT_FOLDER_NAME)
         self._add_children(self._root_path)
         logger.debug(f"Refresh local complete root has {len(self.root)} items, {sum(1 for _ in self.folders(self.root))} folders, {sum(1 for _ in self.files(self.root))} files")
 
@@ -108,7 +108,6 @@ class LocalTree(BaseTree):
                     elif entry.is_dir(follow_symlinks=True):
                         if self.ignore(path):
                             continue
-                        logger.debug(f"Local folder {path}")
                         self._root[path] = LocalFolderInfo(name=entry.name)
                         self._add_children(entry.path)
         except PermissionError:

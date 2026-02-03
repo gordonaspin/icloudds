@@ -4,12 +4,11 @@ from threading import Lock
 import time
 import shutil
 from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor, Future, wait, as_completed
+from concurrent.futures import ThreadPoolExecutor, Future, as_completed
 
 from watchdog.events import RegexMatchingEventHandler
 from watchdog.events import FileSystemEvent, FileCreatedEvent, FileModifiedEvent, FileMovedEvent, FileDeletedEvent, DirCreatedEvent, DirModifiedEvent, DirDeletedEvent, DirMovedEvent
 from queue import Queue, Empty
-from pyicloud.services.drive import DriveNode
 from timeloop import Timeloop
 
 from context import Context
@@ -17,7 +16,7 @@ from model.base_tree import BaseTree
 from model.icloud_tree import iCloudTree
 from model.local_tree import LocalTree
 from model.file_info import FolderInfo, LocalFileInfo, LocalFolderInfo, iCloudFileInfo, iCloudFolderInfo
-from model.action_result import MkDir, Delete, Upload, Rename, Download, Nil
+from model.action_result import MkDir, Delete, Upload, Rename, Move, Download, Nil
 from event.icloud_event import iCloudFolderModifiedEvent
 from model.thread_safe import ThreadSafeList, ThreadSafeSet
 from event.icloud_event import QueuedEvent
@@ -85,7 +84,7 @@ class EventHandler(RegexMatchingEventHandler):
         self._latest_refresh_time: datetime = datetime.now()
         self._event_queue: Queue = Queue()
         self._exception_events: ThreadSafeList = ThreadSafeList()
-        self._suppressed_paths: ThreadSafeList = ThreadSafeList()
+        self._suppressed_paths: ThreadSafeSet = ThreadSafeSet()
         self._limited_threadpool: ThreadPoolExecutor = ThreadPoolExecutor(max_workers=1)
         self._unlimited_threadpool: ThreadPoolExecutor = ThreadPoolExecutor(max_workers=ctx.max_workers)
         self._pending_futures: ThreadSafeSet = ThreadSafeSet()
@@ -101,6 +100,33 @@ class EventHandler(RegexMatchingEventHandler):
             iCloudFolderModifiedEvent: self._handle_icloud_folder_modified_event
         }
 
+    def _collect_events_until_empty(self, events: list[QueuedEvent], queue: Queue, empty_timeout=10.0, poll_timeout=0.5):
+        """
+        Collect events from a queue until it has been empty for `empty_timeout` seconds.
+
+        :param q: queue.Queue instance
+        :param empty_timeout: seconds the queue must remain empty before stopping
+        :param poll_timeout: timeout for each q.get() call
+        :return: list of collected events
+        """
+        empty_since = None
+
+        while True:
+            try:
+                item = queue.get(timeout=poll_timeout)
+            except Empty:
+                # Queue is currently empty
+                now = time.monotonic()
+                if empty_since is None:
+                    empty_since = now
+                elif now - empty_since >= empty_timeout:
+                    break
+            else:
+                # Got an item, reset empty timer
+                empty_since = None
+                events.append(item)
+                queue.task_done()
+    
     def run(self) -> None:
         event_collector: list[QueuedEvent] = []
 
@@ -124,36 +150,32 @@ class EventHandler(RegexMatchingEventHandler):
 
         logger.info("Waiting for events to happen...")
         while True:
-            try:
-                while True:
-                    # Collect events until timeout
-                    event: QueuedEvent = self._event_queue.get(block=True, timeout=10)
-                    event_collector.append(event)
-            except Empty:
-                # When the background refresh is not running, we can process events
-                with self._refresh_lock, self._pending_futures:
-                    # Dispatch collected events, collated by path
-                    self._dispatch_events(event_collector=event_collector)
-                    # Process any pending futures from event handling
+            # Collect events until empty for a period to debouce events
+            self._collect_events_until_empty(events=event_collector, queue=self._event_queue, empty_timeout=self.ctx.debounce_period.total_seconds())
+            # When the background refresh is not running, we can process events
+            with self._refresh_lock, self._pending_futures:
+                # Dispatch collected events, collated by path
+                self._dispatch_events(event_collector=event_collector)
+                # Process any pending futures from event handling
+                while self._pending_futures:
                     self._process_pending_futures()
-                    if not self._pending_futures:
-                        # No pending futures, we can clear suppressed paths
+                # If a refresh is pending, apply it now
+                if self._refresh:
+                    if not (self._pending_futures or self._event_queue.qsize()):
+                        self._dump_state(local=self._local, icloud=self._icloud)
+                        logger.debug("No pending futures or events, proceeding with applying refresh")
+                        uploaded, downloaded, deleted, folders_created = self._apply_icloud_refresh()
                         self._suppressed_paths.clear()
-                        # If a refresh is pending, apply it now
-                        if self._refresh:
-                            if not (self._pending_futures or self._event_queue.qsize()):
-                                self._dump_state(local=self._local, icloud=self._icloud)
-                                logger.debug("No pending futures or events, proceeding with applying refresh")
-                                uploaded, downloaded, deleted, folders_created = self._apply_icloud_refresh()
-                                if any([uploaded, downloaded, deleted, folders_created]):
-                                    logger.info(f"Background refresh applied, {uploaded} uploaded, {downloaded} downloaded, {deleted} deleted, {folders_created} folders created")
-                                else:
-                                    logger.debug(f"Background refresh, no changes")
-                                self._dump_state(local=self._local, icloud=self._icloud, refresh=self._refresh)
-                                self._icloud = self._refresh
-                            else:
-                                logger.debug(f"Background refresh discarded due to pending futures or events")
-                            self._refresh = None
+
+                        if any([uploaded, downloaded, deleted, folders_created]):
+                            logger.info(f"Background refresh applied, {uploaded} uploaded, {downloaded} downloaded, {deleted} deleted, {folders_created} folders created")
+                        else:
+                            logger.info(f"Background refresh, no changes")
+                        self._dump_state(local=self._local, icloud=self._icloud, refresh=self._refresh)
+                        self._icloud = self._refresh
+                    else:
+                        logger.info(f"Background refresh discarded due to pending futures or events")
+                    self._refresh = None
 
     def _refresh_icloud(self, force=False):
         """
@@ -174,9 +196,10 @@ class EventHandler(RegexMatchingEventHandler):
                 logger.debug("refresh is consistent")
                 self._refresh = refresh
                 self._icloud_dirty = False
-                self._latest_refresh_time = datetime.now()
             else:
                 logger.warning("refresh is inconsistent")
+            self._latest_refresh_time = datetime.now()
+                
     def _is_icloud_dirty(self):
         """
         Called by timeloop periodically to check if iCloud Drive has changed since the last refresh.
@@ -205,8 +228,11 @@ class EventHandler(RegexMatchingEventHandler):
             if self._local.ignore(event.src_path, event.is_directory) or self._icloud.ignore(event.src_path, event.is_directory):
                 continue
             logger.debug(f"Dispatching event: {event}")
+            self._suppressed_paths.add(event.src_path)
+            self._suppressed_paths.add(event.dest_path)
             self._event_table.get(type(event), lambda e: logger.warning(f"Unhandled event {e}"))(event)
         event_collector.clear()
+        self._suppressed_paths.clear()
 
     def _process_pending_futures(self):
         """
@@ -235,7 +261,7 @@ class EventHandler(RegexMatchingEventHandler):
             logger.error(f"{result}: {result.exception}")
             if result.fn is not None:
                 retry = result.args[-1]
-                if retry:
+                if retry > 0:
                     logger.debug(f"Retrying {result} {retry} retries left")
                     if isinstance(result, Download):
                         self._pending_futures.add(self._unlimited_threadpool.submit(result.fn, *result.args))
@@ -248,6 +274,9 @@ class EventHandler(RegexMatchingEventHandler):
                 logger.info(f"{result}")
             if isinstance(result, (Upload, Download, Rename)):
                 self._enqueue_event(iCloudFolderModifiedEvent(src_path=os.path.normpath(os.path.dirname(result.path))))
+            if isinstance(result, Move):
+                self._enqueue_event(iCloudFolderModifiedEvent(src_path=os.path.normpath(os.path.dirname(result.path))))
+                self._enqueue_event(iCloudFolderModifiedEvent(src_path=os.path.normpath(os.path.dirname(result.dest_path))))
 
     def _apply_icloud_refresh(self) -> tuple[int, int, int, int]:
         """
@@ -272,9 +301,9 @@ class EventHandler(RegexMatchingEventHandler):
         for path in in_icloud:
             if self._local.ignore(path, isinstance(those.root[path], iCloudFolderInfo)):
                 continue
-            self._suppressed_paths.append(path)
             cfi = those.root[path]
             try:
+                self._suppressed_paths.add(path)
                 if isinstance(cfi, iCloudFolderInfo):
                     if not os.path.exists(os.path.join(self._local.root_path, path)):
                         logger.debug(f"{right} {path} is missing locally, creating folders...")
@@ -313,7 +342,7 @@ class EventHandler(RegexMatchingEventHandler):
                     uploaded_count += 1
                 elif left_fi.modified_time < right_fi.modified_time:
                     logger.debug(f"{right} is newer for {path}, downloading to Local...")
-                    self._suppressed_paths.append(path)
+                    self._suppressed_paths.add(path)
                     self._pending_futures.add(self._unlimited_threadpool.submit(those.download, path, right_fi, self._local.add))
                     downloaded_count += 1
             else:   
@@ -348,6 +377,7 @@ class EventHandler(RegexMatchingEventHandler):
                 continue
             path = self._icloud.trash[name].node.data.get("restorePath")
             if path:
+                self._suppressed_paths.add(path)
                 self._delete_local(path)
                 lfi = self._local.root.get(path, None)
                 if lfi and isinstance(lfi, LocalFileInfo):
@@ -358,7 +388,6 @@ class EventHandler(RegexMatchingEventHandler):
         """
         Delete a local file or folder at the given path.
         """
-        self._suppressed_paths.append(path)
         lfi = self._local.root.get(path, None)
         if lfi is not None:
             fs_object_path = os.path.join(self._absolute_directory, path)
@@ -438,14 +467,15 @@ class EventHandler(RegexMatchingEventHandler):
         else:
             # Moving to a different folder is not supported by pyicloud, treat as delete + create
             logger.debug(f"iCloud Drive moving {'file' if isinstance(cfi, iCloudFileInfo) else 'folder'} {event.src_path} to {event.dest_path} as parent is different")
-            if isinstance(cfi, iCloudFileInfo):
-                de = FileDeletedEvent(src_path=event.src_path)
-                ce = FileCreatedEvent(src_path=event.dest_path)
-            else:
-                de = DirDeletedEvent(src_path=event.src_path)
-                ce = DirCreatedEvent(src_path=event.dest_path)
-            self._handle_file_deleted_event(de)
-            self._handle_file_created_event(ce)
+            self._pending_futures.add(self._limited_threadpool.submit(self._icloud.move, event.src_path, event.dest_path))
+            #if isinstance(cfi, iCloudFileInfo):
+            #    de = FileDeletedEvent(src_path=event.src_path)
+            #    ce = FileCreatedEvent(src_path=event.dest_path)
+            #else:
+            #    de = DirDeletedEvent(src_path=event.src_path)
+            #    ce = DirCreatedEvent(src_path=event.dest_path)
+            #self._handle_file_deleted_event(de)
+            #self._handle_file_created_event(ce)
 
     def _handle_file_deleted_event(self, event: FileDeletedEvent) -> None:
         """
@@ -539,10 +569,56 @@ class EventHandler(RegexMatchingEventHandler):
             elif evs[0].event.event_type == "created":
                 final = evs[0]
             coalesced.append(final)
-
-        # Preserve time order across files
-        coalesced.sort(key=lambda e: e.timestamp)
+            
+        coalesced = self._rationalize_dir_moves(coalesced)
+        
         return coalesced
+
+    def _rationalize_dir_moves(self, events: list[QueuedEvent]) -> list[QueuedEvent]:
+        """
+        Filter redundant events when directory moves occur. Removes nested directory move events
+        (subdirectories moved as part of a parent directory move) and file-level events that are
+        implicitly covered by a directory move (e.g., files created/deleted/moved within a moved directory).
+        This prevents duplicate or conflicting operations on the same paths.
+        """
+        dir_moves = [qe for qe in events if isinstance(qe.event, DirMovedEvent)]
+        if not dir_moves:
+            return events
+        
+        filtered = []
+        for qe in events:
+            # 1️⃣ Drop nested DirMovedEvents (strict subdirectories only)
+            if isinstance(qe.event, DirMovedEvent):
+                src = os.path.normpath(qe.event.src_path)
+                is_nested = False
+                for other_qe in dir_moves:
+                    if qe is other_qe:
+                        continue
+                    other_src = os.path.normpath(other_qe.event.src_path)
+                    if os.path.commonpath([src, other_src]) == other_src:
+                        is_nested = True
+                        break
+                    if is_nested:
+                        break
+
+            # 2️⃣ Drop file events covered by a DirMovedEvent
+            if isinstance(qe.event, (FileMovedEvent, FileCreatedEvent, FileDeletedEvent)):
+                src = os.path.normpath(qe.event.src_path)
+                covered = False
+                for dm_qe in dir_moves:
+                    dm_src = os.path.normpath(dm_qe.event.src_path)
+                    if src == dm_src:
+                        covered = True
+                        break
+                    if os.path.commonpath([src, dm_src]) == dm_src:
+                        covered = True
+                        break
+                if covered:
+                    continue
+                
+            filtered.append(qe)
+            
+        return filtered
     
     def _modify_event(self, event: FileSystemEvent) -> FileSystemEvent:
         """
@@ -555,7 +631,8 @@ class EventHandler(RegexMatchingEventHandler):
     
     def _enqueue_event(self, event: FileSystemEvent) -> None:
         """
-        Enqueue a filesystem event for processing unless it is suppressed."""
+        Enqueue a filesystem event for processing unless it is suppressed.
+        """
         logger.debug(f"Enqueueing: {event}")
         if event.src_path in self._suppressed_paths:
             logger.debug(f"suppressed event {event.src_path}")

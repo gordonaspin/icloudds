@@ -97,7 +97,7 @@ In the snippet below, "name" is a path name to a file relative from the --direct
 By default, `icloudds` creates the logging log file in the current working directory. You may specify a path in the logging-config.json and `icloudds` will create the path if needed. In addition, `icloudds` will use that path for the state logging files. If you run icloudds in the docker container, these files will be inside the container. See below how to access those files, or have them written to the host filesystem.
 
 # Clone, Install dependencies, Build, Install and Run
-`icloudds` depends on a forked version of python pyicloud library implementation pyicloud @ git+https://github.com/timlaing/pyicloud.git. This forked implementation has added features to properly set timestamps of objects uploaded to iCloud Drive and it resolves a retrieval limit of 200 albums (in Photos). This implementation includes features I added to my fork of pyicloud, which is no longer needed. Do not use the `pyicloud` Python package that can be installed using `pip`, it is old and does not have the required features.
+`icloudds` depends on a forked version of python pyicloud library implementation pyicloud @ git+https://github.com/gordonaspin/pyicloud.git. This forked implementation has added features to properly set timestamps of objects uploaded to iCloud Drive, it also implements move functionality to move a folder, or folders to a target folder. It also resolves a retrieval limit of 200 albums (in Photos). Do not use the `pyicloud` Python package that can be installed using `pip`, it is old and does not have the required features.
 
 To build `icloudds`, you need Python, a few dependencies, and a virtual environment if you wish. I use pyenv and virtualenv:
 
@@ -126,11 +126,11 @@ $ icloudds -h
 ```
 ### Install pyicloud from git directly 
 ``` sh
-$ pip install git+https://github.com/timlaing/pyicloud.git@673c1aa
+$ pip install git+https://github.com/gordonaspin/pyicloud.git
 ```
 or, to install the latest version of pyicloud, build and install:
 ``` sh
-$ git clone https://github.com/timlaing/pyicloud.git
+$ git clone https://github.com/gordonaspin/pyicloud.git
 $ cd pyicloud
 $ python -m build
 $ pip install dist/*.whl
@@ -236,7 +236,7 @@ $ docker run -it --name icloudds \
 ``` sh
 $ docker build --tag your-repo/icloudds:latest --progress=plain -f ./Dockerfile
 ```
-#### Building docker image from local source code and timlaing/pyicloud repo image locally:
+#### Building docker image from local source code and gordonaspin/pyicloud repo image locally:
 ``` sh
 $ docker build --tag your-repo/icloudds:latest --progress=plain -f ./Dockerfile.local
 ```

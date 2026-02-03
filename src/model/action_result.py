@@ -5,6 +5,7 @@ from typing import Callable
 class ActionResult:
     success: bool
     path: str
+    dest_path: str = None
     fn: Callable = None
     args: list = None
     exception: Exception = None
@@ -24,6 +25,9 @@ class Upload(ActionResult):
     pass
 
 class Rename(ActionResult):
+    pass
+
+class Move(ActionResult):
     pass
         
 class Delete(ActionResult):

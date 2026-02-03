@@ -4,19 +4,20 @@ import traceback
 from typing import Callable, override 
 from urllib3 import disable_warnings
 from urllib3.exceptions import InsecureRequestWarning
+disable_warnings(category=InsecureRequestWarning)
 from concurrent.futures import ThreadPoolExecutor, Future, as_completed
 import threading
 import pyicloud.services.drive
 from pyicloud.services.drive import DriveNode, CLOUD_DOCS_ZONE_ID_ROOT, CLOUD_DOCS_ZONE_ID_TRASH
 from pyicloud.exceptions import PyiCloudAPIResponseException
-disable_warnings(category=InsecureRequestWarning)
+
 
 from context import Context
 import constants as constants
 from icloud.authenticate import authenticate
 from model.base_tree import BaseTree
 from model.file_info import BaseInfo, LocalFileInfo, iCloudFileInfo, iCloudFolderInfo
-from model.action_result import ActionResult, Download, Upload, Delete, MkDir, Rename, Refresh, Nil
+from model.action_result import ActionResult, Download, Upload, Delete, MkDir, Rename, Move, Refresh, Nil
 logger = logging.getLogger(__name__)
 
 class iCloudMismatchException(Exception):
@@ -100,10 +101,11 @@ class iCloudTree(BaseTree):
             logger.debug(f"Refreshing iCloud Drive {self.ctx.username}::{self.drive.service_root}...")
             with ThreadPoolExecutor(os.cpu_count()*4) as executor:
                 pending = set()
-                for (_root, icf) in [(self._root, iCloudFolderInfo(self.drive.root)), (self._trash, iCloudFolderInfo(self.drive.trash))]:
+                for (root, icf) in [(self._root, iCloudFolderInfo(self.drive.root)), (self._trash, iCloudFolderInfo(self.drive.trash))]:
                     logger.debug(f"Refreshing iCloud Drive {icf.drivewsid}...")
-                    _root[BaseTree.ROOT_FOLDER_NAME] = icf
-                    future = executor.submit(self.process_folder, root=_root, path=BaseTree.ROOT_FOLDER_NAME, recursive=True, ignore=False, executor=executor)
+                    root.clear()
+                    root[BaseTree.ROOT_FOLDER_NAME] = icf
+                    future = executor.submit(self.process_folder, root=root, path=BaseTree.ROOT_FOLDER_NAME, recursive=True, ignore=False, executor=executor)
                     pending = pending | set([future])
                 while pending:
                     done, pending = as_completed(pending), set()
@@ -176,7 +178,7 @@ class iCloudTree(BaseTree):
                 cfi = root[_path] = iCloudFileInfo(child)
                 # Update parent folder modified time to be that of the newest child (not stored in iCloud Drive)
                 #root[relative_path].modified_time = cfi.modified_time if cfi.modified_time > root[relative_path].modified_time else root[relative_path].modified_time
-                logger.debug(f"iCloud Drive {"root" if root is self._root else "trash"} {_path} {cfi}")
+                #logger.debug(f"iCloud Drive {"root" if root is self._root else "trash"} {_path} {cfi}")
             else:
                 logger.debug(f"iCloud Drive {"root" if root is self._root else "trash"} did not process {child.type} {os.path.join(relative_path, child.name)}")
     
@@ -212,12 +214,40 @@ class iCloudTree(BaseTree):
                 parent_node.remove(child_node)
                 self.root.pop(path)
                 result = Delete(success=True, path=path)
+            except ValueError as e:
+                logger.warning(f"ValueError in delete {e}")
+                result = Delete(success=False, path=path, fn=self.delete, args=[path, lfi, 0], exception=e)
             except Exception as e:
                 logger.error(f"Exception in delete {e}")
                 self.handle_drive_exception(e)
                 result = Delete(success=False, path=path, fn=self.delete, args=[path, lfi, retry-1], exception=e)
             finally:
                 threading.current_thread().name = name
+        return result
+
+    def move(self, path: str, dest_path: str, retry=constants.MAX_RETRIES) -> Rename:
+        """
+        Move a file or folder in iCloud Drive.
+        Updates the tree structure accordingly.
+        Returns an ActionResult indicating success or failure.
+        """
+        name = threading.current_thread().name
+        threading.current_thread().name = f"move {path}"
+        result = Nil()
+        try:
+            cfi = self.root.get(path, None)
+            dfi = self.root.get(os.path.normpath(os.path.dirname(dest_path)), None)
+            if cfi is not None and dfi is not None:
+                self.drive.move_nodes_to_node([cfi.node], dfi.node)
+                self.root.pop(path)
+                self.root[dest_path] = cfi
+                result = Move(success=True, path=path, dest_path=dest_path)
+        except Exception as e:
+            logger.error(f"Exception in rename {e}")
+            self.handle_drive_exception(e)
+            result = Move(success=False, path=path, dest_path=dest_path, fn=self.rename, args=[path, dest_path, retry-1], exception=e)
+        finally:
+            threading.current_thread().name = name
         return result
 
     def rename(self, path: str, dest_path: str, retry=constants.MAX_RETRIES) -> Rename:
@@ -257,7 +287,7 @@ class iCloudTree(BaseTree):
             parent_path: str = os.path.normpath(os.path.dirname(path))
             parent_node: DriveNode = self._root[parent_path].node
             with open(os.path.join(self._root_path, path), 'rb') as f:
-                parent_node.upload(f, mtime=lfi.modified_time.timestamp(), ctime=lfi.created_time.timestamp())
+                _result = parent_node.upload(f, mtime=lfi.modified_time.timestamp(), ctime=lfi.created_time.timestamp())
             result = Upload(success=True, path=path)
         except Exception as e:
             logger.error(f"Exception in upload {e}")

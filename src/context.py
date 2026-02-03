@@ -16,6 +16,7 @@ class Context:
     retry_period: timedelta
     icloud_check_period: timedelta
     icloud_refresh_period: timedelta
+    debounce_period: timedelta
     max_workers: int
     timeloop: any
 

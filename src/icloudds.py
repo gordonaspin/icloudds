@@ -31,13 +31,14 @@ CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"], max_content_width=12
 @click.option("--retry-period",         help="Period in seconds to retry failed events", type=click.IntRange(min=constants.RETRY_SECONDS), metavar="<seconds>", default=constants.RETRY_SECONDS, show_default=True)
 @click.option("--icloud-check-period",  help="Period in seconds to look for iCloud changes", type=click.IntRange(min=constants.ICLOUD_CHECK_SECONDS), metavar="<seconds>", default=constants.ICLOUD_CHECK_SECONDS, show_default=True)
 @click.option("--icloud-refresh-period", help="Period in seconds to perform full iCloud refresh", type=click.IntRange(min=constants.ICLOUD_REFRESH_SECONDS), metavar="<seconds>", default=constants.ICLOUD_REFRESH_SECONDS, show_default=True)
+@click.option("--debounce-period",      help="Period in seconds to queue up filesystem events", type=click.IntRange(min=constants.DEBOUNCE_SECONDS), metavar="<seconds>", default=constants.DEBOUNCE_SECONDS, show_default=True)
 @click.option("--max-workers",     help="Maximum number of concurrent workers", type=click.IntRange(min=1), metavar="<workers>", default=os.process_cpu_count(), show_default=True)
 @version_option(package_name='icloudds')
 
 def main(directory: str, username: str, password: str, cookie_directory: str,
          ignore_icloud: str, ignore_local: str,
          include_icloud: str, include_local: str, logging_config: str,
-         retry_period: int, icloud_check_period: int, icloud_refresh_period: int,
+         retry_period: int, icloud_check_period: int, icloud_refresh_period: int, debounce_period: int,
          max_workers: int
          ):
     
@@ -61,6 +62,7 @@ def main(directory: str, username: str, password: str, cookie_directory: str,
                       retry_period=timedelta(seconds=retry_period),
                       icloud_check_period=timedelta(seconds=icloud_check_period),
                       icloud_refresh_period=timedelta(seconds=icloud_refresh_period),
+                      debounce_period=timedelta(seconds=debounce_period),
                       max_workers=max_workers,
                       timeloop=tl)
     
