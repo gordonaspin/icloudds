@@ -15,7 +15,7 @@ from context import Context
 from model.base_tree import BaseTree
 from model.icloud_tree import iCloudTree
 from model.local_tree import LocalTree
-from model.file_info import FolderInfo, LocalFileInfo, LocalFolderInfo, iCloudFileInfo, iCloudFolderInfo
+from model.file_info import BaseInfo, FolderInfo, FileInfo, LocalFileInfo, LocalFolderInfo, iCloudFileInfo, iCloudFolderInfo
 from model.action_result import MkDir, Delete, Upload, Rename, Move, Download, Nil
 from event.icloud_event import iCloudFolderModifiedEvent
 from model.thread_safe import ThreadSafeList, ThreadSafeSet
@@ -84,6 +84,7 @@ class EventHandler(RegexMatchingEventHandler):
         self._latest_refresh_time: datetime = datetime.now()
         self._refresh_is_running = False
         self._event_queue: Queue = Queue()
+        self._refresh_queue: Queue = Queue()
         self._exception_events: ThreadSafeList = ThreadSafeList()
         self._suppressed_paths: ThreadSafeSet = ThreadSafeSet()
         self._limited_threadpool: ThreadPoolExecutor = ThreadPoolExecutor(max_workers=1)
@@ -165,11 +166,13 @@ class EventHandler(RegexMatchingEventHandler):
                     if not (self._pending_futures or self._event_queue.qsize()):
                         self._dump_state(local=self._local, icloud=self._icloud)
                         logger.debug("No pending futures or events, proceeding with applying refresh")
-                        uploaded, downloaded, deleted, folders_created = self._apply_icloud_refresh()
+                        changes = self._apply_icloud_refresh()
                         self._suppressed_paths.clear()
-
-                        if any([uploaded, downloaded, deleted, folders_created]):
-                            logger.info(f"Background refresh applied, {uploaded} uploaded, {downloaded} downloaded, {deleted} deleted, {folders_created} folders created")
+                        if any(changes):
+                            uploaded, downloaded, deleted, folders_created, renamed = changes
+                            logger.info(f"Background refresh applied, {uploaded} uploaded, {downloaded} downloaded, {deleted} deleted, {folders_created} folders created, {renamed} files/folders renamed")
+                            self._collect_events_until_empty(events=event_collector, queue=self._refresh_queue, empty_timeout=0)
+                            self._dispatch_events(event_collector=event_collector)
                         else:
                             logger.info(f"Background refresh, no changes")
                         self._dump_state(local=self._local, icloud=self._icloud, refresh=self._refresh)
@@ -188,20 +191,21 @@ class EventHandler(RegexMatchingEventHandler):
         if not force and (datetime.now() - self._latest_refresh_time) < self.ctx.icloud_refresh_period:
             logger.debug("skipping icloud refresh, period not elapsed")
         else:                
-            while self._pending_futures or self._event_queue.qsize() > 0:
-                logger.debug(f"icloud refresh waiting on {len(self._pending_futures)} pending futures or {self._event_queue.qsize()} events to quiesce")
+            while self._pending_futures.unstable_len() or self._event_queue.qsize() > 0:
+                logger.debug(f"icloud refresh waiting on {self._pending_futures.unstable_len()} pending futures and {self._event_queue.qsize()} events to quiesce")
                 sleep(5)
                 
             with self._refresh_lock, self._pending_futures:
                 # We have the locks
                 logger.debug("refreshing iCloud...")
                 refresh = iCloudTree(ctx=self.ctx)
+                start = datetime.now()
                 if refresh.refresh():
-                    logger.debug("refresh is consistent")
+                    logger.debug(f"refresh took {(datetime.now() - start).total_seconds()}s and is consistent")
                     self._refresh = refresh
                     self._icloud_dirty = False
                 else:
-                    logger.warning("refresh is inconsistent")
+                    logger.warning(f"refresh took {(datetime.now() - start).total_seconds()}s but is inconsistent")
                 self._latest_refresh_time = datetime.now()
         self._refresh_is_running = False
         
@@ -258,7 +262,7 @@ class EventHandler(RegexMatchingEventHandler):
 
     def _handle_action_result(self, result: Delete | Upload | Download | MkDir | Nil | None):
         """
-        Handle the result of an action (upload, download, delete, rename). In the case of failure, re-submit the action.
+        Handle the result of an action (upload, download, delete, rename, etc). In the case of failure, re-submit the action.
         """
         if result is None:
             return
@@ -277,23 +281,66 @@ class EventHandler(RegexMatchingEventHandler):
         else:
             if not isinstance(result, Nil):
                 logger.info(f"{result}")
-            if isinstance(result, (Upload, Download, Rename)):
-                self._enqueue_event(iCloudFolderModifiedEvent(src_path=os.path.normpath(os.path.dirname(result.path))))
-            if isinstance(result, Move):
-                self._enqueue_event(iCloudFolderModifiedEvent(src_path=os.path.normpath(os.path.dirname(result.path))))
-                self._enqueue_event(iCloudFolderModifiedEvent(src_path=os.path.normpath(os.path.dirname(result.dest_path))))
+            if isinstance(result, (Upload, Download, Rename, Move)):
+                self._enqueue_event(iCloudFolderModifiedEvent(src_path=os.path.normpath(os.path.dirname(result.path))), self._refresh_queue)
+                if isinstance(result, Move):
+                    self._enqueue_event(iCloudFolderModifiedEvent(src_path=os.path.normpath(os.path.dirname(result.dest_path))), self._refresh_queue)
 
-    def _apply_icloud_refresh(self) -> tuple[int, int, int, int]:
+    def _apply_icloud_refresh(self) -> tuple[int, int, int, int, int]:
         """
         Apply the queued iCloud refresh to the local tree.
         """
+        renamed = self._sync_renames(self._icloud, self._refresh)
         downloaded, folders_created = self._sync_icloud(self._icloud, self._refresh)
         uploaded, updated_downloaded = self._sync_common(self._icloud, self._refresh)
         deleted = self._icloud.root.keys() - self._refresh.root.keys()
         for path in deleted:
             self._delete_local(path)
-        return (uploaded, downloaded + updated_downloaded, len(deleted), folders_created)
+        return (uploaded, downloaded + updated_downloaded, len(deleted), folders_created, renamed)
 
+    def _sync_renames(self, these: iCloudTree, those: iCloudTree) -> int:
+        """
+        Synchronize renames between existing iCloudTree and the refreshed iCloudTree by matching files via their docwsids.
+        For each file/folder identified by the same docwsid, if the paths differ between the two trees,
+        perform a rename key operation on the existing iCloudTree to reflect the new path. For renamed folders, also
+        updates all child paths accordingly. Returns the total count of items renamed.
+        """
+        these_docwsids: dict = these.docwsids()
+        those_docwsids = those.docwsids()
+        
+        folder_renames = []
+        file_renames = []
+        for docwsid in these_docwsids.keys() & those_docwsids.keys():
+            if those.root[those_docwsids[docwsid]].name != these.root[these_docwsids[docwsid]].name:
+                if isinstance(those.root[those_docwsids[docwsid]], iCloudFolderInfo):
+                    folder_renames.append((docwsid, those_docwsids[docwsid]))
+                else:
+                    file_renames.append((docwsid, those_docwsids[docwsid]))
+        # sort by length (shortest first) 
+        folder_renames.sort(key=lambda x: len(x[1]))
+        file_renames.sort(key=lambda x: len(x[1]))
+
+        renames = 0
+        for docwsid, new_path in folder_renames + file_renames:         # rename folders first
+            old_path = these_docwsids[docwsid]
+            renames += 1
+            self._suppressed_paths.add(old_path)
+            self._suppressed_paths.add(new_path)
+            try:
+                os.rename(os.path.join(self._absolute_directory, old_path), os.path.join(self._absolute_directory, new_path))
+            except Exception as e:
+                old_path = os.path.join(os.path.dirname(new_path), os.path.basename(old_path))
+                os.rename(os.path.join(self._absolute_directory, old_path),os.path.join(self._absolute_directory, new_path))
+            these.root.pop(old_path)
+            these.root[new_path] = those.root[new_path]
+            # Replace the old keys that start with old_path, with new_path/xxx
+            if isinstance(those.root[new_path], iCloudFolderInfo):
+                for k in list(these.root.keys()):
+                    if k.startswith(old_path) and k != new_path:
+                        new_key = k.replace(old_path, new_path)
+                        these.root[new_key] = these.root.pop(k)
+        return renames
+        
     def _sync_icloud(self, these: LocalTree | iCloudTree, those: iCloudTree) -> tuple[int, int]:
         """
         Sync files from iCloud Drive to Local or from Refresh to Local.
@@ -302,8 +349,7 @@ class EventHandler(RegexMatchingEventHandler):
         right = "Refresh" if left == "iCloud" else "iCloud"
         downloaded_count = 0
         folder_created_count = 0
-        in_icloud = those.root.keys() - these.root.keys()
-        for path in in_icloud:
+        for path in those.root.keys() - these.root.keys():
             if self._local.ignore(path, isinstance(those.root[path], iCloudFolderInfo)):
                 continue
             cfi = those.root[path]
@@ -331,8 +377,7 @@ class EventHandler(RegexMatchingEventHandler):
         right = "Refresh" if left == "iCloud" else "iCloud"
         downloaded_count = 0
         uploaded_count = 0
-        in_common = these.root.keys() & those.root.keys()
-        for path in in_common:
+        for path in these.root.keys() & those.root.keys():
             left_fi = these.root[path]
             right_fi = those.root[path]
             if isinstance(left_fi, FolderInfo) and isinstance(right_fi, FolderInfo):
@@ -359,9 +404,8 @@ class EventHandler(RegexMatchingEventHandler):
         """
         Sync files from Local to iCloud Drive that are only present locally.
         """
-        only_in_local = self._local.root.keys() - self._icloud.root.keys()
         uploaded_count = 0
-        for path in only_in_local:
+        for path in self._local.root.keys() - self._icloud.root.keys():
             if self._icloud.ignore(path, isinstance(self._local.root[path], LocalFolderInfo)):
                 continue
             logger.debug(f"Only in local: {path} -> {self._local.root[path]}")
@@ -469,19 +513,10 @@ class EventHandler(RegexMatchingEventHandler):
             # Add the file back with the new name
             self._local.add(event.dest_path)
             self._pending_futures.add(self._limited_threadpool.submit(self._icloud.rename, event.src_path, event.dest_path))
-            #self._enqueue_event(iCloudFolderModifiedEvent(src_path=parent_path))
         else:
             # Moving to a different folder is not supported by pyicloud, treat as delete + create
             logger.debug(f"iCloud Drive moving {'file' if isinstance(cfi, iCloudFileInfo) else 'folder'} {event.src_path} to {event.dest_path} as parent is different")
             self._pending_futures.add(self._limited_threadpool.submit(self._icloud.move, event.src_path, event.dest_path))
-            #if isinstance(cfi, iCloudFileInfo):
-            #    de = FileDeletedEvent(src_path=event.src_path)
-            #    ce = FileCreatedEvent(src_path=event.dest_path)
-            #else:
-            #    de = DirDeletedEvent(src_path=event.src_path)
-            #    ce = DirCreatedEvent(src_path=event.dest_path)
-            #self._handle_file_deleted_event(de)
-            #self._handle_file_created_event(ce)
 
     def _handle_file_deleted_event(self, event: FileDeletedEvent) -> None:
         """
@@ -635,7 +670,7 @@ class EventHandler(RegexMatchingEventHandler):
         if hasattr(event, 'dest_path') and event.dest_path is not None and len(event.dest_path) > 0:
             event.dest_path = os.path.relpath(event.dest_path, self._absolute_directory)
     
-    def _enqueue_event(self, event: FileSystemEvent) -> None:
+    def _enqueue_event(self, event: FileSystemEvent, queue: Queue) -> None:
         """
         Enqueue a filesystem event for processing unless it is suppressed.
         """
@@ -647,7 +682,7 @@ class EventHandler(RegexMatchingEventHandler):
         qe = QueuedEvent(
             timestamp=time(),
             event = event)
-        self._event_queue.put(qe)
+        queue.put(qe)
     
     """
     Watchdog Event Handlers.
@@ -658,16 +693,16 @@ class EventHandler(RegexMatchingEventHandler):
 
     def on_created(self, event):
         self._modify_event(event)
-        self._enqueue_event(event)
+        self._enqueue_event(event, self._event_queue)
 
     def on_deleted(self, event):
         self._modify_event(event)
-        self._enqueue_event(event)
+        self._enqueue_event(event, self._event_queue)
 
     def on_modified(self, event):
         self._modify_event(event)
-        self._enqueue_event(event)
+        self._enqueue_event(event, self._event_queue)
         
     def on_moved(self, event):
         self._modify_event(event)
-        self._enqueue_event(event)
+        self._enqueue_event(event, self._event_queue)

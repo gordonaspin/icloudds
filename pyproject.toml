@@ -9,6 +9,7 @@ dependencies = [
     "pyicloud @ git+https://github.com/gordonaspin/pyicloud.git",
     "watchdog==6.0.0",
     "timeloop-ng==1.0.0",
+    "fasteners==0.20",
 ]
 requires-python = ">=3.14.2"
 readme = "README.md"

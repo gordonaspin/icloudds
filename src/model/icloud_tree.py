@@ -14,7 +14,7 @@ from context import Context
 import constants as constants
 from icloud.authenticate import authenticate
 from model.base_tree import BaseTree
-from model.file_info import LocalFileInfo, iCloudFileInfo, iCloudFolderInfo
+from model.file_info import LocalFileInfo, iCloudFileInfo, iCloudFolderInfo, FileInfo
 from model.action_result import Download, Upload, Delete, MkDir, Rename, Move, Refresh, Nil
 
 disable_warnings(category=InsecureRequestWarning)
@@ -73,7 +73,8 @@ class iCloudTree(BaseTree):
     def __init__(self, ctx: Context):
         self.drive: pyicloud.services.drive.DriveService = None
         self._is_authenticated: bool = False
-        self.ctx = ctx
+        self.ctx: Context = ctx
+        self._threadpool: ThreadPoolExecutor = ThreadPoolExecutor(os.cpu_count()*4)
         super().__init__(root_path=ctx.directory, ignores=ctx.ignore_icloud, includes=ctx.include_icloud)
 
     def authenticate(self) -> None:
@@ -99,7 +100,7 @@ class iCloudTree(BaseTree):
         try:
             self.authenticate()
             logger.debug(f"Refreshing iCloud Drive {self.ctx.username}::{self.drive.service_root}...")
-            with ThreadPoolExecutor(os.cpu_count()*4) as executor:
+            with self._threadpool as executor:
                 pending = set()
                 for (root, icf) in [(self._root, iCloudFolderInfo(self.drive.root)), (self._trash, iCloudFolderInfo(self.drive.trash))]:
                     logger.debug(f"Refreshing iCloud Drive {icf.drivewsid}...")
@@ -336,6 +337,12 @@ class iCloudTree(BaseTree):
             self.handle_drive_exception(e)
             result = MkDir(success=False, path=path, fn=self.create_icloud_folders, args=[path, retry-1], exception=e)
         return result
+    
+    def docwsids(self) -> dict[str, str]:
+        d = dict()
+        for k, v in self.root.items():
+            d[v.node.data['docwsid']] = k
+        return d
 
     @property
     def root_count(self) -> int:

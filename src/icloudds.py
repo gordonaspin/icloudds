@@ -8,6 +8,8 @@ from logger.logger import setup_logging, KeywordFilter
 from watchdog.observers import Observer
 import importlib.metadata
 import timeloop
+import tempfile
+from fasteners import InterProcessLock
 
 import constants
 from context import Context
@@ -42,51 +44,60 @@ def main(directory: str, username: str, password: str, cookie_directory: str,
          max_workers: int
          ):
     
-    ignore_icloud  = [line.strip() for line in open(ignore_icloud).readlines()  if not line.startswith('#')] if ignore_icloud and os.path.isfile(ignore_icloud) else []
-    ignore_local   = [line.strip() for line in open(ignore_local).readlines()   if not line.startswith('#')] if ignore_local and os.path.isfile(ignore_local) else []
-    include_icloud = [line.strip() for line in open(include_icloud).readlines() if not line.startswith('#')] if include_icloud and os.path.isfile(include_icloud) else []
-    include_local  = [line.strip() for line in open(include_local).readlines()  if not line.startswith('#')] if include_local and os.path.isfile(include_local) else []
+    lock_file = os.path.join(tempfile.gettempdir(), "icloudds.lock")
+    lock: InterProcessLock = InterProcessLock(lock_file)
+    if lock.acquire(blocking=False):
+        try:
+            ignore_icloud  = [line.strip() for line in open(ignore_icloud).readlines()  if not line.startswith('#')] if ignore_icloud and os.path.isfile(ignore_icloud) else []
+            ignore_local   = [line.strip() for line in open(ignore_local).readlines()   if not line.startswith('#')] if ignore_local and os.path.isfile(ignore_local) else []
+            include_icloud = [line.strip() for line in open(include_icloud).readlines() if not line.startswith('#')] if include_icloud and os.path.isfile(include_icloud) else []
+            include_local  = [line.strip() for line in open(include_local).readlines()  if not line.startswith('#')] if include_local and os.path.isfile(include_local) else []
 
-    log_path = setup_logging(logging_config=logging_config)
+            log_path = setup_logging(logging_config=logging_config)
 
-    context = Context(directory=directory,
-                      username=username,
-                      password=password,
-                      cookie_directory=cookie_directory,
-                      ignore_local=ignore_local,
-                      ignore_icloud=ignore_icloud,
-                      include_local=include_local,
-                      include_icloud=include_icloud,
-                      logging_config=logging_config,
-                      log_path=log_path,
-                      retry_period=timedelta(seconds=retry_period),
-                      icloud_check_period=timedelta(seconds=icloud_check_period),
-                      icloud_refresh_period=timedelta(seconds=icloud_refresh_period),
-                      debounce_period=timedelta(seconds=debounce_period),
-                      max_workers=max_workers,
-                      timeloop=tl)
-    
-    logger.info(f"{name} {importlib.metadata.version("icloudds")}")
+            context = Context(directory=directory,
+                            username=username,
+                            password=password,
+                            cookie_directory=cookie_directory,
+                            ignore_local=ignore_local,
+                            ignore_icloud=ignore_icloud,
+                            include_local=include_local,
+                            include_icloud=include_icloud,
+                            logging_config=logging_config,
+                            log_path=log_path,
+                            retry_period=timedelta(seconds=retry_period),
+                            icloud_check_period=timedelta(seconds=icloud_check_period),
+                            icloud_refresh_period=timedelta(seconds=icloud_refresh_period),
+                            debounce_period=timedelta(seconds=debounce_period),
+                            max_workers=max_workers,
+                            timeloop=tl)
+            
+            logger.info(f"{name} {importlib.metadata.version("icloudds")}")
 
-    if password is not None:
-        KeywordFilter.add_keyword(password)
+            if password is not None:
+                KeywordFilter.add_keyword(password)
 
-    if directory is None:
-        logger.error("Local directory is required")
-        quit()
-    if not os.path.isdir(directory):
-        logger.error(f"Local directory {directory} does not exist or is not a directory")
-        quit()
-    if username is None:
-        logger.error("iCloud username is required")
-        quit()
+            if directory is None:
+                logger.error("Local directory is required")
+                quit()
+            if not os.path.isdir(directory):
+                logger.error(f"Local directory {directory} does not exist or is not a directory")
+                quit()
+            if username is None:
+                logger.error("iCloud username is required")
+                quit()
 
-    event_handler = EventHandler(ctx=context)
-    observer = Observer()
-    observer.schedule(event_handler, path=event_handler._absolute_directory, recursive=True)
-    observer.start()
-    event_handler.run()
-    observer.join()
-
+            event_handler = EventHandler(ctx=context)
+            observer = Observer()
+            observer.schedule(event_handler, path=event_handler._absolute_directory, recursive=True)
+            observer.start()
+            event_handler.run()
+            observer.join()
+        finally:
+            lock.release()
+            if os.path.exists(lock_file):
+                os.remove(lock_file)
+    else:
+        print(f"Another instance of icloudds is running. Check for {lock_file} file")
 if __name__ == "__main__":
     main()

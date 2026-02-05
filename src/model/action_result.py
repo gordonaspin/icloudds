@@ -11,7 +11,7 @@ class ActionResult:
     exception: Exception = None
 
     def __str__(self):
-        return f"{self.__class__.__name__.lower()} {'succeeded' if self.success else 'failed'} {self.path}"
+        return f"{self.__class__.__name__.lower()}{'' if self.success else ' failed'} {self.path}"
 
 class Nil(ActionResult):
     def __init__(self):

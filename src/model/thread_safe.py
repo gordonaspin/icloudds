@@ -58,6 +58,9 @@ class ThreadSafeDict(UserDict):
     def __len__(self):
         with self._lock:
             return super().__len__()
+        
+    def unstable_len(self):
+        return super().__len__()
 
     # Ensure context manager for the lock itself
     def __enter__(self):
@@ -118,6 +121,9 @@ class ThreadSafeList(UserList):
         with self._lock:
             return super().__len__()
 
+    def unstable_len(self):
+        return super().__len__()
+
     def __enter__(self):
         """Enables context manager support for manual locking blocks."""
         self._lock.acquire()
@@ -166,6 +172,9 @@ class ThreadSafeSet:
         """Return the number of items in the set."""
         with self._lock:
             return len(self._set)
+        
+    def unstable_len(self):
+        return len(self._set)
             
     def __iter__(self):
         """Return a thread-safe iterator over a copy of the set."""
