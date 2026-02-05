@@ -1,6 +1,6 @@
 [project]
 name = "icloudds"
-version = "1.0.7"
+version = "1.0.8"
 description = "icloudds is a command-line tool to bi-directionally synchronize your iCloud Drive to a local folder"
 authors = [{ name = "Gordon Aspin", email = "gordon.aspin@gmail.com" }]
 dependencies = [

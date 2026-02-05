@@ -265,6 +265,7 @@ class iCloudTree(BaseTree):
         Returns an Upload indicating success or failure."""
         result = Nil()
         try:
+            self.delete(path=path, lfi=lfi, retry=0)
             parent_path: str = os.path.normpath(os.path.dirname(path))
             parent_node: DriveNode = self._root[parent_path].node
             with open(os.path.join(self._root_path, path), 'rb') as f:

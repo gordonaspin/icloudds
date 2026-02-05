@@ -161,6 +161,9 @@ class EventHandler(RegexMatchingEventHandler):
                 # Process any pending futures from event handling
                 while self._pending_futures:
                     self._process_pending_futures()
+                    
+                self._collect_events_until_empty(events=event_collector, queue=self._refresh_queue, empty_timeout=0)
+                self._dispatch_events(event_collector=event_collector)
                 # If a refresh is pending, apply it now
                 if self._refresh:
                     if not (self._pending_futures or self._event_queue.qsize()):
@@ -171,8 +174,6 @@ class EventHandler(RegexMatchingEventHandler):
                         if any(changes):
                             uploaded, downloaded, deleted, folders_created, renamed = changes
                             logger.info(f"Background refresh applied, {uploaded} uploaded, {downloaded} downloaded, {deleted} deleted, {folders_created} folders created, {renamed} files/folders renamed")
-                            self._collect_events_until_empty(events=event_collector, queue=self._refresh_queue, empty_timeout=0)
-                            self._dispatch_events(event_collector=event_collector)
                         else:
                             logger.info(f"Background refresh, no changes")
                         self._dump_state(local=self._local, icloud=self._icloud, refresh=self._refresh)
@@ -328,9 +329,12 @@ class EventHandler(RegexMatchingEventHandler):
             self._suppressed_paths.add(new_path)
             try:
                 os.rename(os.path.join(self._absolute_directory, old_path), os.path.join(self._absolute_directory, new_path))
+                logger.info(f"rename {old_path} to {new_path}")
             except Exception as e:
                 old_path = os.path.join(os.path.dirname(new_path), os.path.basename(old_path))
                 os.rename(os.path.join(self._absolute_directory, old_path),os.path.join(self._absolute_directory, new_path))
+                logger.info(f"rename {old_path} to {new_path}")
+
             these.root.pop(old_path)
             these.root[new_path] = those.root[new_path]
             # Replace the old keys that start with old_path, with new_path/xxx
@@ -476,25 +480,20 @@ class EventHandler(RegexMatchingEventHandler):
         if cfi is not None:
             if lfi.modified_time > cfi.modified_time and lfi.size > 0:
                 logger.debug(f"Local file {event.src_path} modified/created, iCloud Drive file {event.src_path} is outdated")
-                self._pending_futures.add(self._limited_threadpool.submit(self._icloud.delete, event.src_path, cfi))
             else:
                 logger.debug(f"iCloud Drive file {event.src_path} is up to date, skipping upload...")
                 return
-        # cfi is None
-        try:
-            if parent is None:
-                logger.debug(f"Local file {event.src_path} modified/created, creating folders for {parent_path}...")
-                self._handle_dir_created_event(DirCreatedEvent(src_path=parent_path))
-            lfi = self._local.root[event.src_path]
-            cfi = self._icloud.root.get(event.src_path, None)
-            if cfi is None or lfi.modified_time > cfi.modified_time and lfi.size > 0:
-                if isinstance(lfi, LocalFileInfo):
-                    logger.debug(f"Local file {event.src_path} modified/created, uploading to iCloud Drive...")
-                    self._pending_futures.add(self._limited_threadpool.submit(self._icloud.upload, event.src_path, lfi))
-        except Exception as e:
-            logger.error(f"iCloud Drive upload failed for {event.src_path}: {e}")
-            self._icloud.handle_drive_exception(e)
-            self._exception_events.append(event)
+
+        if parent is None:
+            logger.debug(f"Local file {event.src_path} modified/created, creating folders for {parent_path}...")
+            self._handle_dir_created_event(DirCreatedEvent(src_path=parent_path))
+
+        lfi = self._local.root[event.src_path]
+        cfi = self._icloud.root.get(event.src_path, None)
+        if cfi is None or lfi.modified_time > cfi.modified_time and lfi.size > 0:
+            if isinstance(lfi, LocalFileInfo):
+                logger.debug(f"Local file {event.src_path} modified/created, uploading to iCloud Drive...")
+                self._pending_futures.add(self._limited_threadpool.submit(self._icloud.upload, event.src_path, lfi))
 
     def _handle_file_moved_event(self, event: FileMovedEvent) -> None:
         """
