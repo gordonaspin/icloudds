@@ -79,7 +79,7 @@ class ThreadSafeDict(UserDict):
         with self._lock:
             return super().__len__()
 
-    def unstable_len(self):
+    def unsafe_len(self):
         """Return the length without acquiring the lock (fast, potentially racy)."""
         return super().__len__()
 
@@ -163,7 +163,7 @@ class ThreadSafeList(UserList):
         with self._lock:
             return super().__len__()
 
-    def unstable_len(self):
+    def unsafe_len(self):
         """Return the length without acquiring the lock (fast, potentially racy)."""
         return super().__len__()
 
@@ -217,7 +217,7 @@ class ThreadSafeSet:
         with self._lock:
             return len(self._set)
 
-    def unstable_len(self):
+    def unsafe_len(self):
         """Return the number of items in the set without locking."""
         return len(self._set)
 

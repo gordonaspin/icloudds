@@ -246,10 +246,10 @@ class EventHandler(RegexMatchingEventHandler):
             and (datetime.now() - self._latest_refresh_time) < self.ctx.icloud_refresh_period):
             logger.debug("skipping icloud refresh, period not elapsed")
         else:
-            while self._pending_futures.unstable_len() or self._event_queue.qsize() > 0:
+            while self._pending_futures.unsafe_len() or self._event_queue.qsize() > 0:
                 logger.debug(
                     "icloud refresh waiting on %d pending futures and %d events to quiesce",
-                    self._pending_futures.unstable_len(),
+                    self._pending_futures.unsafe_len(),
                     self._event_queue.qsize())
                 sleep(5)
 
@@ -679,7 +679,6 @@ class EventHandler(RegexMatchingEventHandler):
         """
         Ignore directory modified events as they do not affect iCloud Drive.
         """
-        return
 
     def _retry_exception_events(self) -> None:
         """Retry events that previously failed by reprocessing them."""
@@ -687,10 +686,10 @@ class EventHandler(RegexMatchingEventHandler):
             logger.debug("Reprocessing %d events...", len(self._exception_events))
             for event in self._exception_events:
                 logger.debug("Reprocessing event: %s", event)
-                self._exception_events.remove(event)
                 self._event_table.get(
                     type(event),
                     lambda e: logger.debug("Unhandled event %s", e))(event)
+            self._exception_events.clear()
 
     def _dump_state(self, local: LocalTree, icloud: ICloudTree, refresh: ICloudTree = None):
         """
@@ -792,6 +791,7 @@ class EventHandler(RegexMatchingEventHandler):
         if hasattr(event, 'dest_path') and event.dest_path is not None and len(event.dest_path) > 0:
             event.dest_path = os.path.relpath(
                 event.dest_path, self._absolute_directory)
+        return event
 
     def _enqueue_event(self, event: FileSystemEvent, queue: Queue) -> None:
         """
@@ -816,20 +816,20 @@ class EventHandler(RegexMatchingEventHandler):
 
     def on_created(self, event):
         """Handle filesystem created event callback from watchdog."""
-        self._modify_event(event=event)
-        self._enqueue_event(event=event, queue=self._event_queue)
+        self._enqueue_event(event=self._modify_event(event=event),
+                            queue=self._event_queue)
 
     def on_deleted(self, event):
         """Handle filesystem deleted event callback from watchdog."""
-        self._modify_event(event=event)
-        self._enqueue_event(event=event, queue=self._event_queue)
+        self._enqueue_event(event=self._modify_event(event=event),
+                            queue=self._event_queue)
 
     def on_modified(self, event):
         """Handle filesystem modified event callback from watchdog."""
-        self._modify_event(event=event)
-        self._enqueue_event(event=event, queue=self._event_queue)
+        self._enqueue_event(event=self._modify_event(event=event),
+                            queue=self._event_queue)
 
     def on_moved(self, event):
         """Handle filesystem moved event callback from watchdog."""
-        self._modify_event(event=event)
-        self._enqueue_event(event=event, queue=self._event_queue)
+        self._enqueue_event(event=self._modify_event(event=event),
+                            queue=self._event_queue)
