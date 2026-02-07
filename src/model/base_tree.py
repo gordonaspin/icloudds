@@ -61,7 +61,7 @@ class BaseTree():
     def add(self, path) -> FileInfo | FolderInfo:
         raise NotImplementedError("Subclasses should implement this method")
 
-    def ignore(self, name, isFolder: bool = False) -> bool:
+    def ignore(self, name: str, isFolder: bool = False) -> bool:
         for regex in self._ignores_regexes:
             if re.match(regex, name):
                 return True
