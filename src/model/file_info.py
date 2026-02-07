@@ -77,11 +77,15 @@ class LocalFileInfo(FileInfo):
         with platform-specific rounding.
         """
         self.size: int = stat_entry.st_size
+        # st_birthtime (creation time) is only available on some platforms/filesystems
+        # st_ctime is inode change time on Unix, creation time on Windows
+        if hasattr(stat_entry, 'st_birthtime'):
+            ctime = stat_entry.st_birthtime
+        else:
+            ctime = stat_entry.st_ctime  # Fallback: may be change time on Linux
         self.created_time: datetime = self._round_seconds(
-            datetime.fromtimestamp(
-                stat_entry.st_ctime,
-                tz=timezone.utc)
-            )
+            datetime.fromtimestamp(ctime, tz=timezone.utc)
+        )
         self.modified_time: datetime = self._round_seconds(
             datetime.fromtimestamp(
                 stat_entry.st_mtime,
