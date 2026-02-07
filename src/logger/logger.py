@@ -1,3 +1,17 @@
+"""Logging helpers and custom formatters used by the application.
+
+This module provides utility functions for configuring logging from a JSON
+configuration file, handlers for uncaught exceptions, and custom logging
+filters/formatters used across the project.
+
+Public API
+- `setup_logging(logging_config)` — configure logging from a config file.
+- `handle_unhandled_exception` / `handle_thread_exception` — hooks to log
+    uncaught exceptions.
+- `MyJSONFormatter` — JSON formatter for structured logging.
+- `NonErrorFilter`, `KeywordFilter` — helpers to filter or mask logs.
+"""
+
 import os
 import atexit
 import datetime as dt
@@ -9,13 +23,23 @@ import threading
 import traceback
 from typing import override
 
-import constants as constants
+import constants
 
 def setup_logging(logging_config: str) -> str:
+    """Configure logging using a JSON config file.
+
+    Loads the JSON logging configuration from `logging_config`, ensures any
+    directories referenced by file handlers exist, applies the configuration,
+    registers shutdown hooks for queue listeners, and installs exception
+    hooks for unhandled exceptions and thread exceptions.
+
+    Returns the folder path used by file handlers (last handler encountered
+    with a `filename`), or raises SystemExit if the config file is missing.
+    """
     try:
-        with open(logging_config) as f_in:
+        with open(logging_config, encoding="utf-8") as f_in:
             config = json.load(f_in)
-    except FileNotFoundError as e:
+    except FileNotFoundError:
         print(f"Logging config file {logging_config} not found")
         sys.exit(constants.ExitCode.EXIT_CLICK_USAGE.value)
 
@@ -24,7 +48,6 @@ def setup_logging(logging_config: str) -> str:
         if file:
             folder_path = os.path.normpath(os.path.dirname(file))
             os.makedirs(folder_path, exist_ok=True)
-        pass    
 
     logging.config.dictConfig(config)
     queue_handler = logging.getHandlerByName("queue_handler")
@@ -51,12 +74,7 @@ def handle_unhandled_exception(exc_type, exc_value, exc_traceback):
     # Log the exception with the traceback
     # Using logger.exception() is a shortcut that automatically adds exc_info
     logger = logging.getLogger("unhandled")
-    func = None
-    if logger:
-        func = logger.critical
-    else:
-        func = print
-    func("**** Unhandled exception occurred ****", exc_info=(exc_type, exc_value, exc_traceback))
+    logger.critical("**** Unhandled exception occurred ****", exc_info=(exc_type, exc_value, exc_traceback))
 
 def handle_thread_exception(args):
     """
@@ -69,6 +87,7 @@ def handle_thread_exception(args):
     else:
         func = print
 
+    # pylint: disable=W1203
     func(f"**** Exception caught in thread: {args.thread.name} ****")
     func(f"Exception type: {args.exc_type.__name__}")
     func(f"Exception value: {args.exc_value}")
@@ -102,6 +121,11 @@ LOG_RECORD_BUILTIN_ATTRS = {
 
 
 class MyJSONFormatter(logging.Formatter):
+    """Structured JSON formatter for logging records.
+
+    The formatter converts `LogRecord` instances to JSON objects, including
+    configured keys and any extra attributes present on the record.
+    """
     def __init__(
         self,
         *,
@@ -112,10 +136,20 @@ class MyJSONFormatter(logging.Formatter):
 
     @override
     def format(self, record: logging.LogRecord) -> str:
+        """Format a LogRecord as a JSON string.
+
+        This builds a dictionary representation via `_prepare_log_dict` and
+        serializes it to JSON.
+        """
         message = self._prepare_log_dict(record)
         return json.dumps(message, default=str)
 
     def _prepare_log_dict(self, record: logging.LogRecord):
+        """Prepare a dictionary from a LogRecord suitable for JSON serialization.
+
+        Extracts configured fields, timestamps, exception and stack traces,
+        and any extra attributes attached to the LogRecord.
+        """
         always_fields = {
             "message": record.getMessage(),
             "timestamp": dt.datetime.fromtimestamp(
@@ -142,19 +176,34 @@ class MyJSONFormatter(logging.Formatter):
 
         return message
 
-
+# pylint: disable=R0903
 class NonErrorFilter(logging.Filter):
+    """Filter that allows only non-error (INFO and below) records.
+
+    Returns True for records at INFO level or below, False otherwise.
+    """
     @override
     def filter(self, record: logging.LogRecord) -> bool | logging.LogRecord:
+        """Return True when the record should be logged (level <= INFO)."""
         return record.levelno <= logging.INFO
 
 class KeywordFilter(logging.Filter):
+    """Filter that masks configured keywords in log messages.
+
+    Keywords registered via `add_keyword`/`add_keywords` will be replaced with
+    asterisks of the same length when present in a log message.
+    """
     _keywords = []
     def __init__(self, name="KeywordFilter"):
+        """Initialize the filter with an optional name (passed to base class)."""
         super().__init__(name)
-    
+
     @override
     def filter(self, record) -> bool | logging.LogRecord:
+        """Mask any configured keywords in the record's message and allow it.
+
+        Always returns True to let the record pass through after masking.
+        """
         message = record.getMessage()
         for keyword in self._keywords:
             if keyword in message:
@@ -163,11 +212,13 @@ class KeywordFilter(logging.Filter):
                 break
 
         return True
-    
+
     @classmethod
     def add_keyword(cls, keyword: str) -> None:
+        """Register a single keyword to be masked in future log messages."""
         cls._keywords.append(keyword)
 
     @classmethod
     def add_keywords(cls, keywords: list[str]) -> None:
+        """Register multiple keywords to be masked in future log messages."""
         cls._keywords.extend(keywords)

@@ -1,8 +1,15 @@
+"""
+Context class to hold command-line params
+"""
 from dataclasses import dataclass
 from datetime import timedelta
 
+# pylint: disable=R0902
 @dataclass
 class Context:
+    """
+    Context class holds command-line parameters
+    """
     directory: str
     username: str
     password: str
@@ -19,5 +26,3 @@ class Context:
     debounce_period: timedelta
     max_workers: int
     timeloop: any
-
-

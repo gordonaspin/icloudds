@@ -1,3 +1,10 @@
+"""
+model.local_tree
+
+Provides a tree representation of the local file system. LocalTree extends BaseTree
+to scan and manage the hierarchy of files and folders stored on the local disk,
+with support for ignore/include filtering rules.
+"""
 import os
 import logging
 from typing import override
@@ -7,6 +14,7 @@ from model.base_tree import BaseTree
 from model.file_info import LocalFileInfo, LocalFolderInfo
 
 logger = logging.getLogger(__name__)
+
 
 class LocalTree(BaseTree):
     """
@@ -62,20 +70,24 @@ class LocalTree(BaseTree):
     - Catches and silently handles PermissionError for unreadable directories
     - Allows tree population to continue even if some directories cannot be accessed
     """
+
     def __init__(self, ctx: Context):
         self.ctx = ctx
-        local_root = local_root if ctx.directory.endswith(os.sep) else ctx.directory + os.sep
-        local_root = ctx.directory
-        super().__init__(root_path=local_root, ignores=self.ctx.ignore_local, includes=self.ctx.include_icloud)
+        super().__init__(root_path=ctx.directory, ignores=self.ctx.ignore_local,
+                         includes=self.ctx.include_icloud)
 
     @override
-    def refresh(self):
+    def refresh(self) -> None:
         """Refresh the local file system tree by scanning the root directory."""
-        logger.debug(f"Refreshing Local Drive {self._root_path}...")
+        logger.debug("Refreshing Local Drive %s...", self._root_path)
         self._root.clear()
-        self._root[BaseTree.ROOT_FOLDER_NAME] = LocalFolderInfo(BaseTree.ROOT_FOLDER_NAME)
+        self._root[BaseTree.ROOT_FOLDER_NAME] = LocalFolderInfo(
+            BaseTree.ROOT_FOLDER_NAME)
         self._add_children(self._root_path)
-        logger.debug(f"Refresh local complete root has {len(self.root)} items, {sum(1 for _ in self.folders(self.root))} folders, {sum(1 for _ in self.files(self.root))} files")
+        logger.debug("Refresh local complete root has %d items, %d folders, %d files",
+                     len(self.root),
+                     sum(1 for _ in self.folders(self.root)),
+                     sum(1 for _ in self.files(self.root)))
 
     @override
     def add(self, path) -> LocalFileInfo | LocalFolderInfo:
@@ -83,16 +95,17 @@ class LocalTree(BaseTree):
         parent_path = os.path.dirname(path)
         folder_path = BaseTree.ROOT_FOLDER_NAME
         for folder_name in parent_path.split(os.sep):
-            folder_path = os.path.normpath(os.path.join(folder_path, folder_name))
-            self._root[folder_path] = LocalFolderInfo(name=folder_name) #, stat_entry=os.stat(os.path.join(self._root_path, folder_path)))
+            folder_path = os.path.join(folder_path, folder_name)
+            self._root[folder_path] = LocalFolderInfo(name=folder_name)
 
         if os.path.isfile(os.path.join(self._root_path, path)):
             stat_entry = os.stat(os.path.join(self._root_path, path))
-            self._root[path] = LocalFileInfo(name=os.path.basename(path), stat_entry=stat_entry)
+            self._root[path] = LocalFileInfo(
+                name=os.path.basename(path), stat_entry=stat_entry)
         elif os.path.isdir(os.path.join(self._root_path, path)):
             self._root[path] = LocalFolderInfo(name=os.path.basename(path))
         return self._root.get(path, None)
-    
+
     def _add_children(self, path):
         """Populate files and subfolders for a single folder."""
         try:
@@ -103,8 +116,9 @@ class LocalTree(BaseTree):
                     if entry.is_file(follow_symlinks=True):
                         if self.ignore(path):
                             continue
-                        logger.debug(f"Local file {path}")
-                        self._root[path] = LocalFileInfo(name=entry.name, stat_entry=stat_entry)
+                        logger.debug("Local file %s", path)
+                        self._root[path] = LocalFileInfo(
+                            name=entry.name, stat_entry=stat_entry)
                     elif entry.is_dir(follow_symlinks=True):
                         if self.ignore(path):
                             continue

@@ -1,3 +1,10 @@
+"""
+model.base_tree
+
+Base tree class for managing a file/folder structure with filtering capabilities.
+Provides common functionality for tracking files and folders, applying include/exclude filters,
+and maintaining a trash/recycle bin for deleted items.
+"""
 import os
 import logging
 import re
@@ -8,73 +15,127 @@ from model.thread_safe import ThreadSafeDict
 
 logger = logging.getLogger(__name__)
 
+
 class BaseTree():
+    """
+    Abstract base class for managing a structure of files and folders.
+
+    Provides filtering (ignore/include patterns), iteration methods, and manages both
+    active content and a trash section for deleted items. This is intended to be subclassed
+    by concrete implementations like LocalTree and ICloudTree.
+    """
     ROOT_FOLDER_NAME = "."
 
-    def __init__(self, root_path: str, ignores: list[str]=None, includes: list[str]=None):
+    def __init__(self, root_path: str, ignores: list[str] = None, includes: list[str] = None):
+        """
+        Initialize a BaseTree instance.
+
+        Args:
+            root_path: The root path of the tree.
+            ignores: List of regex patterns for files/folders to ignore.
+            includes: List of regex patterns for files/folders to explicitly include.
+        """
         self._root: ThreadSafeDict = ThreadSafeDict()
         self._trash: ThreadSafeDict = ThreadSafeDict()
-        self._root_path : str = root_path
-        self._ignores_patterns : list[str] = [
-            r'.*\.com-apple-bird.*', 
+        self._root_path: str = root_path
+        self._ignores_patterns: list[str] = [
+            r'.*\.com-apple-bird.*',
             r'.*\.DS_Store'
-            ]
+        ]
         self._includes_patterns: list[str] = []
-        
+
         self._ignores_patterns.extend(ignores or [])
-        self._ignores_regexes : list[re.Pattern] = [re.compile(pattern) for pattern in self._ignores_patterns]
+        self._ignores_regexes: list[re.Pattern] = [
+            re.compile(pattern) for pattern in self._ignores_patterns]
 
         self._includes_patterns.extend(includes or [])
-        self._includes_regexes : list[re.Pattern] = [re.compile(pattern) for pattern in self._includes_patterns]
+        self._includes_regexes: list[re.Pattern] = [
+            re.compile(pattern) for pattern in self._includes_patterns]
 
     @property
     def root(self) -> ThreadSafeDict:
+        """Get the thread-safe dictionary of active files and folders in the tree."""
         return self._root
-    
+
     @property
     def trash(self) -> ThreadSafeDict:
+        """Get the thread-safe dictionary of deleted files and folders in the trash."""
         return self._trash
-    
+
     @property
     def root_path(self) -> str:
+        """Get the root path of the tree."""
         return self._root_path
-    
+
     @property
     def ignores_patterns(self) -> list[str]:
+        """Get the list of regex patterns for files/folders to ignore."""
         return self._ignores_patterns
-    
+
     @property
     def ignores_regexes(self) -> list[re.Pattern]:
+        """Get the compiled regex patterns for files/folders to ignore."""
         return self._ignores_regexes
 
     @property
     def includes_patterns(self) -> list[str]:
+        """Get the list of regex patterns for files/folders to explicitly include."""
         return self._includes_patterns
-        
+
     @property
     def includes_regexes(self) -> list[str]:
+        """Get the compiled regex patterns for files/folders to explicitly include."""
         return self._includes_regexes
-    
+
     def refresh(self) -> None:
+        """
+        Refresh the tree state by reloading the current file/folder structure.
+        Subclasses must implement this method with tree-specific logic.
+        """
         raise NotImplementedError("Subclasses should implement this method")
 
-    def add(self, path) -> FileInfo | FolderInfo:
+    def add(self, path: str) -> FileInfo | FolderInfo:
+        """
+        Add a file or folder to the tree at the specified path.
+        Subclasses must implement this method with tree-specific logic.
+
+        Args:
+            path: The path to the file or folder to add.
+
+        Returns:
+            The FileInfo or FolderInfo object representing the added item.
+        """
         raise NotImplementedError("Subclasses should implement this method")
 
-    def ignore(self, name: str, isFolder: bool = False) -> bool:
+    def ignore(self, name: str) -> bool:
+        """
+        Determine whether a file or folder should be ignored based on include/exclude patterns.
+
+        Logic:
+        - If the name matches any ignore pattern, return True (ignore it).
+        - If no include patterns are defined, return False (don't ignore).
+        - If include patterns exist and the name matches one, return False (don't ignore).
+        - Otherwise, return True (ignore it).
+
+        Args:
+            name: The name or path to check.
+
+        Returns:
+            True if the item should be ignored, False otherwise.
+        """
         for regex in self._ignores_regexes:
             if re.match(regex, name):
                 return True
-        
+
         if not self._includes_regexes:
             return False
-        
+
         for regex in self._includes_regexes:
             if re.match(regex, name):
                 return False
-                
+
         return True
-    
+
     def files(self, root) -> Iterator[tuple[str, str, BaseInfo]]:
         """
         Breadth-first iteration over all files.

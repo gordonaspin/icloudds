@@ -1,40 +1,80 @@
+"""
+model.action_result. Classes representing success or failure of asynchronous threaded call
+to iCloud to perform an action
+"""
 from dataclasses import dataclass
 from typing import Callable
 
 @dataclass
 class ActionResult:
+    """
+    Base class representing the result of an asynchronous action taken on iCloud Drive.
+    
+    Attributes:
+        success: Whether the action completed successfully.
+        path: The primary path affected by the action.
+        dest_path: The destination path (for move/rename operations).
+        fn: The callable function that performed the action (for retry purposes).
+        args: Arguments to pass to fn when retrying the action.
+        exception: The exception raised if the action failed.
+    """
     success: bool
     path: str
-    dest_path: str = None
-    fn: Callable = None
-    args: list = None
-    exception: Exception = None
+    dest_path: str | None = None
+    fn: Callable | None = None
+    args: list | None = None
+    exception: Exception | None = None
 
     def __str__(self):
         return f"{self.__class__.__name__.lower()}{'' if self.success else ' failed'} {self.path}"
 
 class Nil(ActionResult):
+    # pylint: disable=too-few-public-methods
+    """
+    Represents a no-op action result (no action taken).
+    """
     def __init__(self):
-        self.success = True
-        self.path = ""
+        super().__init__(success=True, path="")
 
 class Download(ActionResult):
-    pass
+    # pylint: disable=too-few-public-methods
+    """
+    Represents the result of downloading a file from iCloud Drive to the local filesystem.
+    """
 
 class Upload(ActionResult):
-    pass
+    # pylint: disable=too-few-public-methods
+    """
+    Represents the result of uploading a file from the local filesystem to iCloud Drive.
+    """
 
 class Rename(ActionResult):
-    pass
+    # pylint: disable=too-few-public-methods
+    """
+    Represents the result of renaming a file or folder in iCloud Drive.
+    """
 
 class Move(ActionResult):
-    pass
-        
+    # pylint: disable=too-few-public-methods
+    """
+    Represents the result of moving a file or folder to a different directory in iCloud Drive.
+    Requires both path (source) and dest_path (destination).
+    """
+
 class Delete(ActionResult):
-    pass
+    # pylint: disable=too-few-public-methods
+    """
+    Represents the result of deleting a file or folder from iCloud Drive.
+    """
 
 class MkDir(ActionResult):
-    pass
+    # pylint: disable=too-few-public-methods
+    """
+    Represents the result of creating a folder in iCloud Drive.
+    """
 
 class Refresh(ActionResult):
-    pass
+    # pylint: disable=too-few-public-methods
+    """
+    Represents the result of refreshing the iCloud Drive tree.
+    """
