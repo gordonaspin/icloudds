@@ -70,11 +70,11 @@ class EventHandler(RegexMatchingEventHandler):
         self._refresh: iCloudTree = None
         for s in self._local.ignores_patterns:
             logger.debug(f"ignore local: {s}")
-        for s in self._local.includes_list:
+        for s in self._local._includes_patterns:
             logger.debug(f"include local: {s}")
         for s in self._icloud.ignores_patterns:
             logger.debug(f"ignore icloud: {s}")
-        for s in self._icloud.includes_list:
+        for s in self._icloud._includes_patterns:
             logger.debug(f"include icloud: {s}")
 
         super().__init__(regexes=None, ignore_regexes=self._local.ignores_patterns, ignore_directories=False, case_sensitive=False)
@@ -235,8 +235,6 @@ class EventHandler(RegexMatchingEventHandler):
         logger.debug(f"Dispatching {len(events)} coalesced events...")
         for qe in events:
             event: FileSystemEvent = qe.event
-            if self._local.ignore(event.src_path, event.is_directory) or self._icloud.ignore(event.src_path, event.is_directory):
-                continue
             logger.debug(f"Dispatching event: {event}")
             self._suppressed_paths.add(event.src_path)
             self._suppressed_paths.add(event.dest_path)
@@ -671,13 +669,16 @@ class EventHandler(RegexMatchingEventHandler):
     
     def _enqueue_event(self, event: FileSystemEvent, queue: Queue) -> None:
         """
-        Enqueue a filesystem event for processing unless it is suppressed.
+        Enqueue a filesystem event for processing unless it is suppressed or should be ignored.
         """
         logger.debug(f"Enqueueing: {event}")
         if event.src_path in self._suppressed_paths:
             logger.debug(f"suppressed event {event.src_path}")
             return
-        
+        if self._local.ignore(event.src_path, event.is_directory) or self._icloud.ignore(event.src_path, event.is_directory):
+            return
+        if hasattr(event, 'dest_path') and event.dest_path is not None and len(event.dest_path) > 0:
+            return
         qe = QueuedEvent(
             timestamp=time(),
             event = event)

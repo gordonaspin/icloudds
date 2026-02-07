@@ -15,18 +15,17 @@ class BaseTree():
         self._root: ThreadSafeDict = ThreadSafeDict()
         self._trash: ThreadSafeDict = ThreadSafeDict()
         self._root_path : str = root_path
-        self._ignores = ignores
-        self._includes = includes
         self._ignores_patterns : list[str] = [
             r'.*\.com-apple-bird.*', 
             r'.*\.DS_Store'
             ]
-
+        self._includes_patterns: list[str] = []
+        
         self._ignores_patterns.extend(ignores or [])
         self._ignores_regexes : list[re.Pattern] = [re.compile(pattern) for pattern in self._ignores_patterns]
 
-        self._includes_list : list[str] = []
-        self._includes_list.extend(includes or [])
+        self._includes_patterns.extend(includes or [])
+        self._includes_regexes : list[re.Pattern] = [re.compile(pattern) for pattern in self._includes_patterns]
 
     @property
     def root(self) -> ThreadSafeDict:
@@ -41,24 +40,20 @@ class BaseTree():
         return self._root_path
     
     @property
-    def ignores(self) -> list[str] | None:
-        return self._ignores
-    
-    @property
-    def includes(self) -> list[str] | None:
-        return self._includes
-    
-    @property
     def ignores_patterns(self) -> list[str]:
         return self._ignores_patterns
     
     @property
     def ignores_regexes(self) -> list[re.Pattern]:
         return self._ignores_regexes
-    
+
     @property
-    def includes_list(self) -> list[str]:
-        return self._includes_list
+    def includes_patterns(self) -> list[str]:
+        return self._includes_patterns
+        
+    @property
+    def includes_regexes(self) -> list[str]:
+        return self._includes_regexes
     
     def refresh(self) -> None:
         raise NotImplementedError("Subclasses should implement this method")
@@ -67,15 +62,15 @@ class BaseTree():
         raise NotImplementedError("Subclasses should implement this method")
 
     def ignore(self, name, isFolder: bool = False) -> bool:
-        for ignore_regex in self._ignores_regexes:
-            if re.match(ignore_regex, name):
+        for regex in self._ignores_regexes:
+            if re.match(regex, name):
                 return True
         
-        if not self._includes_list:
+        if not self._includes_regexes:
             return False
         
-        for startswith in self._includes_list:
-            if name.startswith(startswith):
+        for regex in self._includes_regexes:
+            if re.match(regex, name):
                 return False
                 
         return True

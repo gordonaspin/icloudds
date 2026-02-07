@@ -187,6 +187,8 @@ class iCloudTree(BaseTree):
         """
         for root in [self._root, self._trash]:
             for path in list(root):
+                if path == BaseTree.ROOT_FOLDER_NAME:
+                    continue
                 if self.ignore(path, isinstance(root[path], iCloudFolderInfo)):
                     root.pop(path)
 

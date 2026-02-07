@@ -1,5 +1,2 @@
-# Folders to include, one per line. A folder includes all sub-folders and files.
-# if this include file is not specified or is empty, all folders are included
-# 
-# ThisFolder
-# ThatFolder
+# regexes to include, one per line.
+# if this include file is not specified or is empty, everything is included
