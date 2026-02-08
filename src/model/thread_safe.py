@@ -80,7 +80,7 @@ class ThreadSafeDict(UserDict):
             return super().__contains__(key)
 
     def __iter__(self):
-        # Iteration should be done on a consistent snapshot of the data
+        # Returns a snapshot so the loop can run without holding the lock
         with self._lock:
             return iter(list(self.data.keys()))
 
@@ -176,6 +176,11 @@ class ThreadSafeList(UserList):
         """Return the length without acquiring the lock (fast, potentially racy)."""
         return super().__len__()
 
+    def __contains__(self, item):
+        """Check if an item is in the list (thread-safe)."""
+        with self._lock:
+            return item in self.data
+
     def __enter__(self):
         """Acquire the underlying lock and return self for use as a context manager."""
         self._lock.acquire()
@@ -211,11 +216,6 @@ class ThreadSafeSet:
         with self._lock:
             self._set.update(*others)
 
-    def contains(self, item):
-        """Check if an item is in the set in a thread-safe manner."""
-        with self._lock:
-            return item in self._set
-
     def __contains__(self, item):
         """Check if an item is in the set (thread-safe)."""
         with self._lock:
@@ -238,8 +238,7 @@ class ThreadSafeSet:
     def __iter__(self):
         """Return a thread-safe iterator over a copy of the set."""
         with self._lock:
-            # Iterate over a copy to prevent issues if the set is modified
-            # by another thread during iteration.
+            # Returns a snapshot so the loop can run without holding the lock
             return iter(set(self._set))
 
     def __enter__(self):

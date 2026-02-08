@@ -40,21 +40,28 @@ def authenticate(
         # fmt: on
         print("\nYour trusted devices are:")
         devices = api.trusted_devices
-        for i, device in enumerate(devices):
-            phone = device.get("phoneNumber")
-            name = device.get("deviceName", f"SMS to {phone}")
-            print(f"{i}: {name}")
+        device = None
+        while device is None:
+            for i, device in enumerate(devices):
+                phone = device.get("phoneNumber")
+                name = device.get("deviceName", f"SMS to {phone}")
+                print(f"{i}: {name}")
 
-        device_index = int(input("\nWhich device number would you like to use: "))
-        device = devices[device_index]
+            device_index = int(input("\nWhich device number would you like to use: "))
+            device = devices.get(device_index, None)
+            if device is None:
+                print("Invalid device chosen, please retry")
+            else:
+                break
+            
         if not api.send_verification_code(device):
             logger.debug("Failed to send verification code")
-            sys.exit(constants.ExitCode.EXIT_FAILED_SEND_2SA_CODE)
+            sys.exit(constants.ExitCode.EXIT_FAILED_SEND_2SA_CODE.value)
 
         code = input("\nPlease enter two-step (2SA) validation code: ")
         if not api.validate_verification_code(device, code):
             print("Failed to verify verification code")
-            sys.exit(constants.ExitCode.EXIT_FAILED_VERIFY_2FA_CODE)
+            sys.exit(constants.ExitCode.EXIT_FAILED_VERIFY_2FA_CODE.value)
 
     while True:
         try:

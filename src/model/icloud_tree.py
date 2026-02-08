@@ -174,11 +174,13 @@ class ICloudTree(BaseTree):
     @override
     def add(self,
             path: str,
-            obj: ICloudFileInfo|ICloudFolderInfo=None) -> ICloudFileInfo | ICloudFolderInfo:
+            obj: ICloudFileInfo | ICloudFolderInfo,
+            root: dict=None) -> ICloudFileInfo | ICloudFolderInfo:
         """
         Add a file or folder to the iCloud Drive tree structure.
         """
-        self._root[path] = obj
+        target = root if root is not None else self._root
+        target[path] = obj
         return obj
 
     def process_folder(self,
@@ -186,7 +188,7 @@ class ICloudTree(BaseTree):
                        path=None,
                        recursive=False,
                        ignore=True,
-                       executor=None) -> Refresh|list[Future]:
+                       executor=None) -> Refresh | list[Future]:
         """
         Process a folder in iCloud Drive, populating its children in the tree structure.
         Can be run recursively to process subfolders.
@@ -204,7 +206,7 @@ class ICloudTree(BaseTree):
             if ignore and self.ignore(child_path):
                 continue
             if child.type == "folder":
-                cfi = self.add(child_path, ICloudFolderInfo(child))
+                cfi = self.add(child_path, ICloudFolderInfo(child), root=root)
                 logger.debug("iCloud Drive %s %s %s",
                              "root" if root is self._root else "trash",
                               child_path,
@@ -227,7 +229,7 @@ class ICloudTree(BaseTree):
                             ignore=ignore,
                             executor=executor)
             elif child.type == "file":
-                cfi = self.add(child_path, ICloudFileInfo(child))
+                cfi = self.add(child_path, ICloudFileInfo(child), root=root)
             else:
                 logger.debug("iCloud Drive %s did not process %s %s",
                              "root" if root is self._root else "trash",
@@ -397,7 +399,7 @@ class ICloudTree(BaseTree):
                               exception=e)
         return result
 
-    def create_icloud_folders(self, path: str, retry=constants.MAX_RETRIES) -> MkDir|Nil:
+    def create_icloud_folders(self, path: str, retry=constants.MAX_RETRIES) -> MkDir | Nil:
         """
         Create intermediate folders in iCloud Drive for the given path.
         Returns a MkDir or Nil indicating success or failure."""

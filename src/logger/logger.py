@@ -81,7 +81,8 @@ def handle_thread_exception(args):
     Custom exception hook to handle uncaught exceptions in threads.
     """
     logger = logging.getLogger("unhandled")
-    logger.critical("**** Exception caught in thread: {args.thread.name} ****",
+    logger.critical("**** Exception caught in thread: %s ****",
+                    args.thread.name,
                     exc_info=(args.exc_type, args.exc_value, args.exc_traceback))
 
 LOG_RECORD_BUILTIN_ATTRS = {

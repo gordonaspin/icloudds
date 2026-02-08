@@ -94,7 +94,7 @@ class BaseTree():
         """
         raise NotImplementedError("Subclasses should implement this method")
 
-    def add(self, path: str, obj: FileInfo|FolderInfo) -> FileInfo | FolderInfo:
+    def add(self, path: str, obj: FileInfo | FolderInfo, root:dict=None) -> FileInfo | FolderInfo:
         """
         Add a file or folder to the tree at the specified path.
         Subclasses must implement this method with tree-specific logic.
