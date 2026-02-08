@@ -9,7 +9,6 @@ import os
 import logging
 import traceback
 from typing import Callable, override
-# pylint: disable=E0611
 from concurrent.futures import ThreadPoolExecutor, Future, as_completed
 
 from urllib3 import disable_warnings
@@ -153,7 +152,6 @@ class ICloudTree(BaseTree):
                 raise MismatchException(f"Mismatch root_count: {self.root_count} "
                                         f"!= root_files_count: {root_files_count} +"
                                         f" trash_files_count: {trash_files_count}")
-        # pylint: disable=W0718
         except Exception as e:
             self.handle_drive_exception(e)
             succeeded = False
@@ -174,27 +172,21 @@ class ICloudTree(BaseTree):
         return succeeded
 
     @override
-    def add(self, path) -> ICloudFileInfo | ICloudFolderInfo:
+    def add(self,
+            path: str,
+            obj: ICloudFileInfo|ICloudFolderInfo=None) -> ICloudFileInfo | ICloudFolderInfo:
         """
-        Add a file or folder (and its parents)to the iCloud Drive tree structure.
+        Add a file or folder to the iCloud Drive tree structure.
         """
-        parent_path = os.path.dirname(path)
-        folder_path = BaseTree.ROOT_FOLDER_NAME
-        for folder_name in parent_path.split(os.sep):
-            folder_path = os.path.join(folder_path, folder_name)
-            self._root[folder_path] = ICloudFolderInfo(
-                name=folder_name,
-                stat_entry=os.stat(os.path.join(self._root_path, folder_path))
-                )
+        self._root[path] = obj
+        return obj
 
-        stat_entry = os.stat(os.path.join(self._root_path, path))
-        if stat_entry.is_file():
-            self._root[path] = ICloudFileInfo(name=os.path.basename(path), stat_entry=stat_entry)
-        elif stat_entry.is_dir():
-            self._root[path] = ICloudFolderInfo(name=os.path.basename(path), stat_entry=stat_entry)
-        return self._root.get(path, None)
-
-    def process_folder(self, root=None, path=None, recursive=False, ignore=True, executor=None) -> Refresh|list[Future]:
+    def process_folder(self,
+                       root=None,
+                       path=None,
+                       recursive=False,
+                       ignore=True,
+                       executor=None) -> Refresh|list[Future]:
         """
         Process a folder in iCloud Drive, populating its children in the tree structure.
         Can be run recursively to process subfolders.
@@ -205,11 +197,14 @@ class ICloudTree(BaseTree):
         futures = []
         children = root[path].node.get_children(force=True)
         for child in children:
-            child_path = child.name if path == BaseTree.ROOT_FOLDER_NAME else os.path.join(path, child.name)
+            if path == BaseTree.ROOT_FOLDER_NAME:
+                child_path = child.name
+            else:
+                child_path = os.path.join(path, child.name)
             if ignore and self.ignore(child_path):
                 continue
             if child.type == "folder":
-                cfi = root[child_path] = ICloudFolderInfo(child)
+                cfi = self.add(child_path, ICloudFolderInfo(child))
                 logger.debug("iCloud Drive %s %s %s",
                              "root" if root is self._root else "trash",
                               child_path,
@@ -232,7 +227,7 @@ class ICloudTree(BaseTree):
                             ignore=ignore,
                             executor=executor)
             elif child.type == "file":
-                cfi = root[child_path] = ICloudFileInfo(child)
+                cfi = self.add(child_path, ICloudFileInfo(child))
             else:
                 logger.debug("iCloud Drive %s did not process %s %s",
                              "root" if root is self._root else "trash",
@@ -272,12 +267,19 @@ class ICloudTree(BaseTree):
                 result = Delete(success=True, path=path)
             except ValueError as e:
                 logger.warning("ValueError in delete %s", e)
-                result = Delete(success=False, path=path, fn=self.delete, args=[path, lfi, 0], exception=e)
-            # pylint: disable=W0718
+                result = Delete(success=False,
+                                path=path,
+                                fn=self.delete,
+                                args=[path, lfi, 0],
+                                exception=e)
             except Exception as e:
                 logger.error("Exception in delete %s", e)
                 self.handle_drive_exception(e)
-                result = Delete(success=False, path=path, fn=self.delete, args=[path, lfi, retry-1], exception=e)
+                result = Delete(success=False,
+                                path=path,
+                                fn=self.delete,
+                                args=[path, lfi, retry-1],
+                                exception=e)
         return result
 
     def move(self, path: str, dest_path: str, retry=constants.MAX_RETRIES) -> Move:
@@ -295,7 +297,6 @@ class ICloudTree(BaseTree):
                 self.root.pop(path)
                 self.root[dest_path] = cfi
                 result = Move(success=True, path=path, dest_path=dest_path)
-        # pylint: disable=W0718
         except Exception as e:
             logger.error("Exception in move %s", e)
             self.handle_drive_exception(e)
@@ -321,7 +322,6 @@ class ICloudTree(BaseTree):
                 self.root.pop(path)
                 self.root[dest_path] = cfi
                 result = Rename(success=True, path=dest_path)
-        # pylint: disable=W0718
         except Exception as e:
             logger.error("Exception in rename %s", e)
             self.handle_drive_exception(e)
@@ -347,7 +347,6 @@ class ICloudTree(BaseTree):
                                    mtime=lfi.modified_time.timestamp(),
                                    ctime=lfi.created_time.timestamp())
             result = Upload(success=True, path=path)
-        # pylint: disable=W0718
         except Exception as e:
             logger.error("Exception in upload %s", e)
             self.handle_drive_exception(e)
@@ -388,7 +387,6 @@ class ICloudTree(BaseTree):
             os.utime(file_path, (cfi.modified_time.timestamp(), cfi.modified_time.timestamp()))
             apply_after(path)
             result = Download(success=True, path=path)
-        # pylint: disable=W0718
         except Exception as e:
             logger.error("Exception in download %s", e)
             self.handle_drive_exception(e)
@@ -424,7 +422,6 @@ class ICloudTree(BaseTree):
                     _path = folder_path
             if result is None:
                 result = Nil()
-        # pylint: disable=W0718
         except Exception as e:
             logger.error("Exception in create_icloud_folders %s", e)
             self.handle_drive_exception(e)
@@ -469,10 +466,8 @@ class ICloudTree(BaseTree):
             # This is a hack to get refreshed node info without replacing
             # the node object in pyicloud and having to reload the entire tree
             post_count = self.drive.get_node_data(CLOUD_DOCS_ZONE_ID_ROOT).get('fileCount')
-            # pylint: disable=W0212
-            self.drive._root.data['fileCount'] = post_count
+            self.drive.root.data['fileCount'] = post_count
             logger.debug("iCloud Drive root count pre: %d, post: %d", pre_count, post_count)
-        # pylint: disable=W0718
         except Exception as e:
             logger.warning("iCloud Drive get fileCount failed: %s", e)
             return False
@@ -489,10 +484,8 @@ class ICloudTree(BaseTree):
             # This is a hack to get refreshed node info without replacing
             # the node object in pyicloud and having to reload the entire tree
             post_count = self.drive.get_node_data(CLOUD_DOCS_ZONE_ID_TRASH).get('numberOfItems')
-            # pylint: disable=W0212
-            self.drive._trash.data['numberOfItems'] = post_count
+            self.drive.trash.data['numberOfItems'] = post_count
             logger.debug("iCloud Drive trash count pre: %d, post: %d", pre_count, post_count)
-        # pylint: disable=W0718
         except Exception as e:
             logger.warning("iCloud Drive trash refresh failed: %s", e)
             return False
@@ -505,7 +498,7 @@ class ICloudTree(BaseTree):
         Clears authentication state on API failures to force re-authentication."""
         match e:
             case PyiCloudAPIResponseException():
-                logger.warning(f"iCloud Drive Exception: %s %s", e.__class__.__name__, e)
+                logger.warning("iCloud Drive Exception: %s %s", e.__class__.__name__, e)
                 logger.warning(traceback.format_exc())
                 self._is_authenticated = False
             case MismatchException():

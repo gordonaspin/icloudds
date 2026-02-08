@@ -1,6 +1,6 @@
 [project]
 name = "icloudds"
-version = "1.0.9"
+version = "1.1.0"
 description = "icloudds is a command-line tool to bi-directionally synchronize your iCloud Drive to a local folder"
 authors = [{ name = "Gordon Aspin", email = "gordon.aspin@gmail.com" }]
 dependencies = [
@@ -27,4 +27,16 @@ icloudds = "icloudds:main"
 [project.urls]
 Repository = "https://github.com/gordonaspin/icloudds"
 
+[tool.pylint]
+# Disable specific messages by their symbolic name or ID.
+disable = [
+    "no-member",
+    "too-many-instance-attributes",
+    "too-many-arguments",
+    "too-many-positional-arguments",
+    "too-many-locals",
+    "no-value-for-parameter",
+    "too-few-public-methods",
+    "broad-exception-caught",
+]
 [tool.setuptools]

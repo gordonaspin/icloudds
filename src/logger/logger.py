@@ -20,7 +20,6 @@ import logging
 import logging.config
 import sys
 import threading
-import traceback
 from typing import override
 
 import constants
@@ -41,7 +40,7 @@ def setup_logging(logging_config: str) -> str:
             config = json.load(f_in)
     except FileNotFoundError:
         print(f"Logging config file {logging_config} not found")
-        sys.exit(constants.ExitCode.EXIT_CLICK_USAGE.value)
+        sys.exit(constants.ExitCode.EXIT_FAILED_CLICK_USAGE.value)
 
     for _, handler in config['handlers'].items():
         file = handler.get('filename', None)
@@ -74,24 +73,16 @@ def handle_unhandled_exception(exc_type, exc_value, exc_traceback):
     # Log the exception with the traceback
     # Using logger.exception() is a shortcut that automatically adds exc_info
     logger = logging.getLogger("unhandled")
-    logger.critical("**** Unhandled exception occurred ****", exc_info=(exc_type, exc_value, exc_traceback))
+    logger.critical("**** Unhandled exception occurred ****",
+                    exc_info=(exc_type, exc_value, exc_traceback))
 
 def handle_thread_exception(args):
     """
     Custom exception hook to handle uncaught exceptions in threads.
     """
     logger = logging.getLogger("unhandled")
-    func = None
-    if logger:
-        func = logger.critical
-    else:
-        func = print
-
-    # pylint: disable=W1203
-    func(f"**** Exception caught in thread: {args.thread.name} ****")
-    func(f"Exception type: {args.exc_type.__name__}")
-    func(f"Exception value: {args.exc_value}")
-    func(traceback.format_exc())
+    logger.critical("**** Exception caught in thread: {args.thread.name} ****",
+                    exc_info=(args.exc_type, args.exc_value, args.exc_traceback))
 
 LOG_RECORD_BUILTIN_ATTRS = {
     "args",
@@ -176,7 +167,6 @@ class MyJSONFormatter(logging.Formatter):
 
         return message
 
-# pylint: disable=R0903
 class NonErrorFilter(logging.Filter):
     """Filter that allows only non-error (INFO and below) records.
 

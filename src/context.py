@@ -4,7 +4,6 @@ Context class to hold command-line params
 from dataclasses import dataclass
 from datetime import timedelta
 
-# pylint: disable=R0902
 @dataclass
 class Context:
     """

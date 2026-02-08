@@ -1,3 +1,7 @@
+"""
+Define an ICloudFolderModifiedEvent to post-process a folder change
+Define QueuedEvent wrapper class in order to time-sort coalesced events
+"""
 from dataclasses import dataclass
 
 from watchdog.events import DirModifiedEvent, FileSystemEvent

@@ -113,7 +113,6 @@ CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"], "max_content_width": 
               show_default=True)
 @version_option(package_name='icloudds')
 
-# pylint: disable=R0913 R0914 R0917
 def main(directory: str,
          username: str,
          password: str,
@@ -185,5 +184,4 @@ def main(directory: str,
         sys.exit(constants.ExitCode.EXIT_FAILED_ALREADY_RUNNING.value)
 
 if __name__ == "__main__":
-    # pylint: disable=E1120
     main()

@@ -10,7 +10,6 @@ from time import time, sleep, monotonic
 import shutil
 from datetime import datetime
 from queue import Queue, Empty
-# pylint: disable=E0611
 from concurrent.futures import ThreadPoolExecutor, Future, as_completed
 
 from watchdog.events import RegexMatchingEventHandler
@@ -45,7 +44,6 @@ from event.icloud_event import QueuedEvent
 
 logger = logging.getLogger(__name__)  # __name__ is a common choice
 
-# pylint: disable=too-many-instance-attributes
 class EventHandler(RegexMatchingEventHandler):
     """
         The EventHandler operates as a bi-directional sync engine with the following key components:
@@ -169,7 +167,6 @@ class EventHandler(RegexMatchingEventHandler):
         main processing loop for event handling
         """
         event_collector: list[QueuedEvent] = []
-
         # Initial refresh of local and iCloud trees, perform initial sync
         logger.info("Performing initial refresh of Local...")
         self._local.refresh()
@@ -327,7 +324,8 @@ class EventHandler(RegexMatchingEventHandler):
 
     def _handle_action_result(self, result: Delete | Upload | Download | MkDir | Nil | None):
         """
-        Handle the result of an action (upload, download, delete, rename, etc). In the case of failure, re-submit the action.
+        Handle the result of an action (upload, download, delete, rename, etc).
+        In the case of failure, re-submit the action.
         """
         if result is None:
             return
@@ -598,8 +596,8 @@ class EventHandler(RegexMatchingEventHandler):
 
     def _handle_file_moved_event(self, event: FileMovedEvent) -> None:
         """
-        Handle a file moved/renamed event by renaming the file in iCloud Drive if the parent folder is the same,
-        otherwise treat as delete + create.
+        Handle a file moved/renamed event by renaming the file in iCloud Drive
+        if the parent folder is the same, otherwise treat as delete + create.
         """
         parent_path: str = os.path.dirname(event.src_path)
         dest_parent_path: str = os.path.dirname(event.dest_path)

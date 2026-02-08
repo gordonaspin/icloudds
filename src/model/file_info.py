@@ -5,7 +5,6 @@ the local file system and iCloud Drive. It includes base classes (FileInfo, Fold
 and platform-specific implementations (LocalFileInfo, LocalFolderInfo, iCloudFileInfo,
 ICloudFolderInfo) that handle timestamp conversions and metadata extraction.
 """
-# pylint: disable=R0903
 from typing import override
 import os
 import platform
@@ -111,7 +110,7 @@ class ICloudFolderInfo(FolderInfo):
     @property
     def name(self) -> str:
         """Get the folder name, returning '.' for root and trash folders."""
-        if self.drivewsid == CLOUD_DOCS_ZONE_ID_ROOT or self.drivewsid == NODE_TRASH:
+        if self.drivewsid in (CLOUD_DOCS_ZONE_ID_ROOT, NODE_TRASH):
             return "."
         return self.node.name
 

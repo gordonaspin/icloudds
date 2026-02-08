@@ -29,7 +29,6 @@ class ActionResult:
         return f"{self.__class__.__name__.lower()}{'' if self.success else ' failed'} {self.path}"
 
 class Nil(ActionResult):
-    # pylint: disable=too-few-public-methods
     """
     Represents a no-op action result (no action taken).
     """
@@ -37,44 +36,37 @@ class Nil(ActionResult):
         super().__init__(success=True, path="")
 
 class Download(ActionResult):
-    # pylint: disable=too-few-public-methods
     """
     Represents the result of downloading a file from iCloud Drive to the local filesystem.
     """
 
 class Upload(ActionResult):
-    # pylint: disable=too-few-public-methods
     """
     Represents the result of uploading a file from the local filesystem to iCloud Drive.
     """
 
 class Rename(ActionResult):
-    # pylint: disable=too-few-public-methods
     """
     Represents the result of renaming a file or folder in iCloud Drive.
     """
 
 class Move(ActionResult):
-    # pylint: disable=too-few-public-methods
     """
     Represents the result of moving a file or folder to a different directory in iCloud Drive.
     Requires both path (source) and dest_path (destination).
     """
 
 class Delete(ActionResult):
-    # pylint: disable=too-few-public-methods
     """
     Represents the result of deleting a file or folder from iCloud Drive.
     """
 
 class MkDir(ActionResult):
-    # pylint: disable=too-few-public-methods
     """
     Represents the result of creating a folder in iCloud Drive.
     """
 
 class Refresh(ActionResult):
-    # pylint: disable=too-few-public-methods
     """
     Represents the result of refreshing the iCloud Drive tree.
     """

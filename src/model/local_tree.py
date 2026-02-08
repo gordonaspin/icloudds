@@ -90,7 +90,7 @@ class LocalTree(BaseTree):
                      sum(1 for _ in self.files(self.root)))
 
     @override
-    def add(self, path) -> LocalFileInfo | LocalFolderInfo:
+    def add(self, path, _obj=None) -> LocalFileInfo | LocalFolderInfo:
         """Add a file or folder at the given path to the local tree structure."""
         parent_path = os.path.dirname(path)
         folder_path = BaseTree.ROOT_FOLDER_NAME

@@ -25,7 +25,7 @@ class ThreadSafeDict(UserDict):
         """Initialize the mapping and the reentrant lock."""
         super().__init__(*args, **kwargs)
         self._lock = RLock()  # Use RLock for reentrant locking
-   
+
     def get(self, key, default=None):
         with self._lock:
             return super().get(key, default)
@@ -33,10 +33,19 @@ class ThreadSafeDict(UserDict):
     def pop(self, key, default=None):
         with self._lock:
             return super().pop(key, default)
-    # pylint: disable=W0221
-    def update(self, *args, **kwargs):
+
+    def update(self, other=None, **kwargs):  # pylint: disable=arguments-differ
+        """Update mapping with another mapping or iterable and/or keyword args.
+
+        Uses the same signature as the built-in `dict.update(other=None, **kwargs)`
+        to avoid Pylint W0221 (arguments-differ) when overriding.
+        """
         with self._lock:
-            super().update(*args, **kwargs)
+            if other is None:
+                # Only keyword args provided
+                super().update(**kwargs)
+            else:
+                super().update(other, **kwargs)
 
     def clear(self):
         with self._lock:
@@ -197,13 +206,18 @@ class ThreadSafeSet:
         with self._lock:
             self._set.remove(item)
 
-    def update(self, items):
-        """Update the set with multiple items in a thread-safe manner."""
+    def update(self, *others):
+        """Update the set with one or more iterables in a thread-safe manner."""
         with self._lock:
-            self._set.update(items)
+            self._set.update(*others)
 
     def contains(self, item):
         """Check if an item is in the set in a thread-safe manner."""
+        with self._lock:
+            return item in self._set
+
+    def __contains__(self, item):
+        """Check if an item is in the set (thread-safe)."""
         with self._lock:
             return item in self._set
 
@@ -224,7 +238,7 @@ class ThreadSafeSet:
     def __iter__(self):
         """Return a thread-safe iterator over a copy of the set."""
         with self._lock:
-            # Iterate over a copy to prevent issues if the set is modified 
+            # Iterate over a copy to prevent issues if the set is modified
             # by another thread during iteration.
             return iter(set(self._set))
 
