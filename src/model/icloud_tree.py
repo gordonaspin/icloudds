@@ -21,7 +21,7 @@ from context import Context
 import constants
 from icloud.authenticate import authenticate
 from model.base_tree import BaseTree
-from model.file_info import LocalFileInfo, ICloudFileInfo, ICloudFolderInfo
+from model.file_info import LocalFileInfo, FolderInfo, FileInfo, ICloudFileInfo, ICloudFolderInfo
 from model.action_result import Download, Upload, Delete, MkDir, Rename, Move, Refresh, Nil
 
 disable_warnings(category=InsecureRequestWarning)
@@ -174,14 +174,14 @@ class ICloudTree(BaseTree):
     @override
     def add(self,
             path: str,
-            obj: ICloudFileInfo | ICloudFolderInfo,
-            root: dict=None) -> ICloudFileInfo | ICloudFolderInfo:
+            _obj: FileInfo | FolderInfo=None,
+            _root: dict=None) -> FileInfo | FolderInfo:
         """
         Add a file or folder to the iCloud Drive tree structure.
         """
-        target = root if root is not None else self._root
-        target[path] = obj
-        return obj
+        target = _root if _root is not None else self._root
+        target[path] = _obj
+        return _obj
 
     def process_folder(self,
                        root=None,
@@ -206,7 +206,7 @@ class ICloudTree(BaseTree):
             if ignore and self.ignore(child_path):
                 continue
             if child.type == "folder":
-                cfi = self.add(child_path, ICloudFolderInfo(child), root=root)
+                cfi = self.add(path=child_path, _obj=ICloudFolderInfo(child), _root=root)
                 logger.debug("iCloud Drive %s %s %s",
                              "root" if root is self._root else "trash",
                               child_path,
@@ -229,7 +229,7 @@ class ICloudTree(BaseTree):
                             ignore=ignore,
                             executor=executor)
             elif child.type == "file":
-                cfi = self.add(child_path, ICloudFileInfo(child), root=root)
+                cfi = self.add(path=child_path, _obj=ICloudFileInfo(child), _root=root)
             else:
                 logger.debug("iCloud Drive %s did not process %s %s",
                              "root" if root is self._root else "trash",

@@ -90,20 +90,25 @@ class LocalTree(BaseTree):
                      sum(1 for _ in self.files(self.root)))
 
     @override
-    def add(self, path, _obj=None, root:dict=None) -> LocalFileInfo | LocalFolderInfo:
+    def add(self, path, _obj=None, _root:dict=None) -> LocalFileInfo | LocalFolderInfo:
         """Add a file or folder at the given path to the local tree structure."""
         parent_path = os.path.dirname(path)
         folder_path = BaseTree.ROOT_FOLDER_NAME
-        for folder_name in parent_path.split(os.sep):
-            folder_path = os.path.join(folder_path, folder_name)
-            self._root[folder_path] = LocalFolderInfo(name=folder_name)
+        if len(parent_path):
+            for folder_name in parent_path.split(os.sep):
+                folder_path = os.path.normpath(os.path.join(folder_path, folder_name))
+                if folder_path not in self._root:
+                    self._root[folder_path] = LocalFolderInfo(name=folder_name)
 
-        if os.path.isfile(os.path.join(self._root_path, path)):
-            stat_entry = os.stat(os.path.join(self._root_path, path))
-            self._root[path] = LocalFileInfo(
-                name=os.path.basename(path), stat_entry=stat_entry)
-        elif os.path.isdir(os.path.join(self._root_path, path)):
-            self._root[path] = LocalFolderInfo(name=os.path.basename(path))
+        if _obj is not None:
+            self._root[path] = _obj
+        else:
+            if os.path.isfile(os.path.join(self._root_path, path)):
+                stat_entry = os.stat(os.path.join(self._root_path, path))
+                self._root[path] = LocalFileInfo(
+                    name=os.path.basename(path), stat_entry=stat_entry)
+            elif os.path.isdir(os.path.join(self._root_path, path)):
+                self._root[path] = LocalFolderInfo(name=os.path.basename(path))
         return self._root.get(path, None)
 
     def _add_children(self, path):
@@ -117,12 +122,12 @@ class LocalTree(BaseTree):
                         if self.ignore(path):
                             continue
                         logger.debug("Local file %s", path)
-                        self._root[path] = LocalFileInfo(
-                            name=entry.name, stat_entry=stat_entry)
+                        self.add(path, LocalFileInfo(
+                            name=entry.name, stat_entry=stat_entry))
                     elif entry.is_dir(follow_symlinks=True):
                         if self.ignore(path):
                             continue
-                        self._root[path] = LocalFolderInfo(name=entry.name)
+                        self.add(path=path, _obj=LocalFolderInfo(name=entry.name))
                         self._add_children(entry.path)
         except PermissionError:
             pass  # Skip unreadable directories

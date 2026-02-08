@@ -566,12 +566,16 @@ class EventHandler(RegexMatchingEventHandler):
         cfi: ICloudFileInfo = self._icloud.root.get(event.src_path, None)
 
         if cfi is not None:
-            if lfi.modified_time > cfi.modified_time and lfi.size > 0:
+            if (lfi.modified_time > cfi.modified_time) and lfi.size > 0:
                 logger.debug("Local file %s modified/created, iCloud Drive file is outdated",
                              event.src_path)
             else:
-                logger.debug("iCloud Drive file %s is up to date, skipping upload...",
-                             event.src_path)
+                if (lfi.modified_time > cfi.modified_time) and lfi.size == 0:
+                    logger.debug("local file %s is newer, but has size 0, skipping upload...",
+                                 event.src_path)
+                else:
+                    logger.debug("iCloud Drive file %s is up to date, skipping upload...",
+                                 event.src_path)
                 return
 
         if parent is None:
@@ -582,7 +586,7 @@ class EventHandler(RegexMatchingEventHandler):
 
         lfi = self._local.root[event.src_path]
         cfi = self._icloud.root.get(event.src_path, None)
-        if cfi is None or lfi.modified_time > cfi.modified_time and lfi.size > 0:
+        if cfi is None or (lfi.modified_time > cfi.modified_time) and lfi.size > 0:
             if isinstance(lfi, LocalFileInfo):
                 logger.debug("Local file %s modified/created, uploading to iCloud Drive...",
                              event.src_path)

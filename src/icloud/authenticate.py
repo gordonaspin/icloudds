@@ -13,6 +13,47 @@ from pyicloud.exceptions import (
 
 import constants
 
+logger = logging.getLogger(__name__)
+
+def _handle_2fa(api):
+    # fmt: off
+    print("\nTwo-factor (2FA) authentication required.")
+    # fmt: on
+    code = input("\nPlease enter verification code: ")
+    if not api.validate_2fa_code(code):
+        logger.debug("Failed to verify (2FA) verification code")
+        sys.exit(constants.ExitCode.EXIT_FAILED_VERIFY_2FA_CODE.value)
+
+def _handle_2sa(api):
+    # fmt: off
+    print("\nTwo-step (2SA) authentication required.")
+    # fmt: on
+    print("\nYour trusted devices are:")
+    devices = api.trusted_devices
+    device = None
+    while device is None:
+        for i, device in enumerate(devices):
+            phone = device.get("phoneNumber")
+            name = device.get("deviceName", f"SMS to {phone}")
+            print(f"{i}: {name}")
+
+        device_index = int(input("\nWhich device number would you like to use: "))
+        device = devices.get(device_index, None)
+        if device is None:
+            print("Invalid device chosen, please retry")
+        else:
+            break
+
+    if not api.send_verification_code(device):
+        logger.debug("Failed to send verification code")
+        sys.exit(constants.ExitCode.EXIT_FAILED_SEND_2SA_CODE.value)
+
+    code = input("\nPlease enter two-step (2SA) validation code: ")
+    if not api.validate_verification_code(device, code):
+        print("Failed to verify verification code")
+        sys.exit(constants.ExitCode.EXIT_FAILED_VERIFY_2FA_CODE.value)
+
+
 def authenticate(
     username,
     password,
@@ -22,46 +63,8 @@ def authenticate(
     unverified_https=False
 ):
     """Authenticate with iCloud username and password"""
-    logger = logging.getLogger(__name__)
     logger.debug("Authenticating...")
     failure_count = 0
-    def _handle_2fa(api):
-        # fmt: off
-        print("\nTwo-factor (2FA) authentication required.")
-        # fmt: on
-        code = input("\nPlease enter verification code: ")
-        if not api.validate_2fa_code(code):
-            logger.debug("Failed to verify (2FA) verification code")
-            sys.exit(constants.ExitCode.EXIT_FAILED_VERIFY_2FA_CODE.value)
-
-    def _handle_2sa(api):
-        # fmt: off
-        print("\nTwo-step (2SA) authentication required.")
-        # fmt: on
-        print("\nYour trusted devices are:")
-        devices = api.trusted_devices
-        device = None
-        while device is None:
-            for i, device in enumerate(devices):
-                phone = device.get("phoneNumber")
-                name = device.get("deviceName", f"SMS to {phone}")
-                print(f"{i}: {name}")
-
-            device_index = int(input("\nWhich device number would you like to use: "))
-            device = devices.get(device_index, None)
-            if device is None:
-                print("Invalid device chosen, please retry")
-            else:
-                break
-            
-        if not api.send_verification_code(device):
-            logger.debug("Failed to send verification code")
-            sys.exit(constants.ExitCode.EXIT_FAILED_SEND_2SA_CODE.value)
-
-        code = input("\nPlease enter two-step (2SA) validation code: ")
-        if not api.validate_verification_code(device, code):
-            print("Failed to verify verification code")
-            sys.exit(constants.ExitCode.EXIT_FAILED_VERIFY_2FA_CODE.value)
 
     while True:
         try:
@@ -86,11 +89,6 @@ def authenticate(
             return api
 
         except PyiCloudFailedLoginException as e:
-            # If the user has a stored password; we just used it and
-            # it did not work; let's delete it if there is one.
-            #if utils.password_exists_in_keyring(username):
-            #    utils.delete_password_in_keyring(username)
-
             failure_count += 1
             message = (f"PyiCloudFailedLoginException for {username}, {e}, "
                       f"failure count {failure_count}")

@@ -94,7 +94,10 @@ class BaseTree():
         """
         raise NotImplementedError("Subclasses should implement this method")
 
-    def add(self, path: str, obj: FileInfo | FolderInfo, root:dict=None) -> FileInfo | FolderInfo:
+    def add(self,
+            path: str,
+            _obj: FileInfo | FolderInfo=None,
+            _root:dict=None) -> FileInfo | FolderInfo:
         """
         Add a file or folder to the tree at the specified path.
         Subclasses must implement this method with tree-specific logic.
@@ -141,19 +144,19 @@ class BaseTree():
         Breadth-first iteration over all files.
         Yields: (pathname, name, item)
         """
-        for key, value in root.items():
-            if isinstance(value, FileInfo):
-                path = os.path.dirname(key)
-                path = BaseTree.ROOT_FOLDER_NAME if not path else path
-                yield root[path], key, value
+        for path, cfi in root.items():
+            if isinstance(cfi, FileInfo):
+                parent = os.path.dirname(path)
+                parent = BaseTree.ROOT_FOLDER_NAME if not parent else parent
+                yield parent, path, cfi
 
     def folders(self, root) -> Iterator[tuple[str, str, BaseInfo]]:
         """
         Breadth-first iteration over all folders.
         Yields: (pathname, name, item)
         """
-        for key, value in root.items():
-            if isinstance(value, FolderInfo):
-                path = os.path.dirname(key)
-                path = BaseTree.ROOT_FOLDER_NAME if not path else path
-                yield root[path], key, value
+        for path, cfi in root.items():
+            if isinstance(cfi, FolderInfo):
+                parent = os.path.dirname(path)
+                parent = BaseTree.ROOT_FOLDER_NAME if not parent else parent
+                yield parent, path, cfi
