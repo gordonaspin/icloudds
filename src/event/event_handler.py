@@ -566,6 +566,10 @@ class EventHandler(RegexMatchingEventHandler):
         parent_path: Path = event.src_path.parent
         lfi: LocalFileInfo = self._local.add(event.src_path)
 
+        if lfi is None:
+            logger.warning("Local file %s disappeared", event.src_path)
+            return
+
         parent: ICloudFolderInfo = self._icloud.root.get(str(parent_path), None)
         cfi: ICloudFileInfo = self._icloud.root.get(str(event.src_path), None)
 
@@ -588,7 +592,6 @@ class EventHandler(RegexMatchingEventHandler):
             self._handle_dir_created_event(
                 DirCreatedEvent(src_path=parent_path))
 
-        lfi = self._local.root[str(event.src_path)]
         cfi = self._icloud.root.get(str(event.src_path), None)
         if cfi is None or (lfi.modified_time > cfi.modified_time) and lfi.size > 0:
             if isinstance(lfi, LocalFileInfo):

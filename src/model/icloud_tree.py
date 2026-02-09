@@ -356,6 +356,12 @@ class ICloudTree(BaseTree):
                                    mtime=lfi.modified_time.timestamp(),
                                    ctime=lfi.created_time.timestamp())
             result = Upload(success=True, path=path)
+        except FileNotFoundError as e:
+            logger.warning("%s File %s not found during upload", e, path)
+            result = Upload(success=False,
+                            path=path,
+                            fn=self.upload,
+                            args=[path, lfi, 0])
         except Exception as e:
             logger.error("Exception in upload %s", e)
             self.handle_drive_exception(e)
