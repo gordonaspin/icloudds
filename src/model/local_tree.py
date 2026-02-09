@@ -5,7 +5,8 @@ Provides a tree representation of the local file system. LocalTree extends BaseT
 to scan and manage the hierarchy of files and folders stored on the local disk,
 with support for ignore/include filtering rules.
 """
-import os
+from os import scandir
+from pathlib import Path
 import logging
 from typing import override
 
@@ -45,7 +46,7 @@ class LocalTree(BaseTree):
     4. ADDING FILES:
     - The add() method adds a file or folder path to the tree
     - Creates intermediate parent folder entries as needed
-    - Retrieves file metadata using os.stat() for file properties
+    - Retrieves file metadata using Path.stat() for file properties
     - Returns the FileInfo object representing the added item
 
     5. RECURSIVE SCANNING:
@@ -90,42 +91,38 @@ class LocalTree(BaseTree):
                      sum(1 for _ in self.files(self.root)))
 
     @override
-    def add(self, path, _obj=None, _root:dict=None) -> LocalFileInfo | LocalFolderInfo:
+    def add(self, path: Path, _obj=None, _root:dict=None) -> LocalFileInfo | LocalFolderInfo:
         """Add a file or folder at the given path to the local tree structure."""
-        parent_path = os.path.dirname(path)
-        folder_path = BaseTree.ROOT_FOLDER_NAME
-        if len(parent_path):
-            for folder_name in parent_path.split(os.sep):
-                folder_path = os.path.normpath(os.path.join(folder_path, folder_name))
-                if folder_path not in self._root:
-                    self._root[folder_path] = LocalFolderInfo(name=folder_name)
+        for parent in path.parents:
+            if parent.name and str(parent) not in self._root:
+                self._root[str(parent)] = LocalFolderInfo(name=parent.name)
 
         if _obj is not None:
-            self._root[path] = _obj
+            self._root[str(path)] = _obj
         else:
-            if os.path.isfile(os.path.join(self._root_path, path)):
-                stat_entry = os.stat(os.path.join(self._root_path, path))
-                self._root[path] = LocalFileInfo(
-                    name=os.path.basename(path), stat_entry=stat_entry)
-            elif os.path.isdir(os.path.join(self._root_path, path)):
-                self._root[path] = LocalFolderInfo(name=os.path.basename(path))
-        return self._root.get(path, None)
+            if self._root_path.joinpath(path).is_file():
+                stat_entry = self._root_path.joinpath(path).stat()
+                self._root[str(path)] = LocalFileInfo(
+                    name=path.name, stat_entry=stat_entry)
+            elif self._root_path.joinpath(path).is_dir():
+                self._root[str(path)] = LocalFolderInfo(path.name)
+        return self._root.get(str(path), None)
 
-    def _add_children(self, path):
+    def _add_children(self, path: Path):
         """Populate files and subfolders for a single folder."""
         try:
-            with os.scandir(path) as entries:
+            with scandir(str(path)) as entries:
                 for entry in entries:
-                    path = os.path.relpath(entry.path, self._root_path)
+                    path = Path(entry.path).relative_to(self._root_path)
                     stat_entry = entry.stat()
                     if entry.is_file(follow_symlinks=True):
-                        if self.ignore(path):
+                        if self.ignore(str(path)):
                             continue
                         logger.debug("Local file %s", path)
                         self.add(path, LocalFileInfo(
                             name=entry.name, stat_entry=stat_entry))
                     elif entry.is_dir(follow_symlinks=True):
-                        if self.ignore(path):
+                        if self.ignore(str(path)):
                             continue
                         self.add(path=path, _obj=LocalFolderInfo(name=entry.name))
                         self._add_children(entry.path)

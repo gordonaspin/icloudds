@@ -11,8 +11,7 @@ Public API
 - `MyJSONFormatter` — JSON formatter for structured logging.
 - `NonErrorFilter`, `KeywordFilter` — helpers to filter or mask logs.
 """
-
-import os
+from pathlib import Path
 import atexit
 import datetime as dt
 import json
@@ -24,7 +23,7 @@ from typing import override
 
 import constants
 
-def setup_logging(logging_config: str) -> str:
+def setup_logging(logging_config: Path) -> Path:
     """Configure logging using a JSON config file.
 
     Loads the JSON logging configuration from `logging_config`, ensures any
@@ -42,12 +41,6 @@ def setup_logging(logging_config: str) -> str:
         print(f"Logging config file {logging_config} not found")
         sys.exit(constants.ExitCode.EXIT_FAILED_CLICK_USAGE.value)
 
-    for _, handler in config['handlers'].items():
-        file = handler.get('filename', None)
-        if file:
-            folder_path = os.path.normpath(os.path.dirname(file))
-            os.makedirs(folder_path, exist_ok=True)
-
     logging.config.dictConfig(config)
     queue_handler = logging.getHandlerByName("queue_handler")
     if queue_handler is not None:
@@ -58,7 +51,14 @@ def setup_logging(logging_config: str) -> str:
     threading.excepthook = handle_thread_exception
     logging.getLogger().info("logging configured")
 
-    return folder_path
+    for _, handler in config['handlers'].items():
+        file = handler.get('filename', None)
+        if file:
+            folder_path = Path(file).parent
+            folder_path.mkdir(parents=True, exist_ok=True)
+            return folder_path
+
+    return None
 
 def handle_unhandled_exception(exc_type, exc_value, exc_traceback):
     """

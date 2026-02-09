@@ -5,7 +5,7 @@ Base tree class for managing a file/folder structure with filtering capabilities
 Provides common functionality for tracking files and folders, applying include/exclude filters,
 and maintaining a trash/recycle bin for deleted items.
 """
-import os
+from pathlib import Path
 import logging
 import re
 from collections.abc import Iterator
@@ -26,7 +26,7 @@ class BaseTree():
     """
     ROOT_FOLDER_NAME = "."
 
-    def __init__(self, root_path: str, ignores: list[str] = None, includes: list[str] = None):
+    def __init__(self, root_path: Path, ignores: list[str] = None, includes: list[str] = None):
         """
         Initialize a BaseTree instance.
 
@@ -37,7 +37,7 @@ class BaseTree():
         """
         self._root: ThreadSafeDict = ThreadSafeDict()
         self._trash: ThreadSafeDict = ThreadSafeDict()
-        self._root_path: str = root_path
+        self._root_path: Path = root_path
         self._ignores_patterns: list[str] = [
             r'.*\.com-apple-bird.*',
             r'.*\.DS_Store'
@@ -63,7 +63,7 @@ class BaseTree():
         return self._trash
 
     @property
-    def root_path(self) -> str:
+    def root_path(self) -> Path:
         """Get the root path of the tree."""
         return self._root_path
 
@@ -95,7 +95,7 @@ class BaseTree():
         raise NotImplementedError("Subclasses should implement this method")
 
     def add(self,
-            path: str,
+            path: Path,
             _obj: FileInfo | FolderInfo=None,
             _root:dict=None) -> FileInfo | FolderInfo:
         """
@@ -110,7 +110,7 @@ class BaseTree():
         """
         raise NotImplementedError("Subclasses should implement this method")
 
-    def ignore(self, name: str) -> bool:
+    def ignore(self, path: str) -> bool:
         """
         Determine whether a file or folder should be ignored based on include/exclude patterns.
 
@@ -127,36 +127,32 @@ class BaseTree():
             True if the item should be ignored, False otherwise.
         """
         for regex in self._ignores_regexes:
-            if re.match(regex, name):
+            if re.match(regex, path):
                 return True
 
         if not self._includes_regexes:
             return False
 
         for regex in self._includes_regexes:
-            if re.match(regex, name):
+            if re.match(regex, path):
                 return False
 
         return True
 
-    def files(self, root) -> Iterator[tuple[str, str, BaseInfo]]:
+    def files(self, root) -> Iterator[tuple[Path, BaseInfo]]:
         """
         Breadth-first iteration over all files.
         Yields: (pathname, name, item)
         """
         for path, cfi in root.items():
             if isinstance(cfi, FileInfo):
-                parent = os.path.dirname(path)
-                parent = BaseTree.ROOT_FOLDER_NAME if not parent else parent
-                yield parent, path, cfi
+                yield path, cfi
 
-    def folders(self, root) -> Iterator[tuple[str, str, BaseInfo]]:
+    def folders(self, root) -> Iterator[tuple[Path, BaseInfo]]:
         """
         Breadth-first iteration over all folders.
         Yields: (pathname, name, item)
         """
         for path, cfi in root.items():
             if isinstance(cfi, FolderInfo):
-                parent = os.path.dirname(path)
-                parent = BaseTree.ROOT_FOLDER_NAME if not parent else parent
-                yield parent, path, cfi
+                yield path, cfi

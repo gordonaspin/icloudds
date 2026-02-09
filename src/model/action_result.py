@@ -2,6 +2,7 @@
 model.action_result. Classes representing success or failure of asynchronous threaded call
 to iCloud to perform an action
 """
+from pathlib import Path
 from dataclasses import dataclass
 from typing import Callable
 
@@ -19,8 +20,8 @@ class ActionResult:
         exception: The exception raised if the action failed.
     """
     success: bool
-    path: str
-    dest_path: str | None = None
+    path: Path
+    dest_path: Path | None = None
     fn: Callable | None = None
     args: list | None = None
     exception: Exception | None = None

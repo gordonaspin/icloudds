@@ -1,6 +1,7 @@
 """
 Context class to hold command-line params
 """
+from pathlib import Path
 from dataclasses import dataclass
 from datetime import timedelta
 
@@ -9,7 +10,7 @@ class Context:
     """
     Context class holds command-line parameters
     """
-    directory: str
+    directory: Path
     username: str
     password: str
     cookie_directory: str
@@ -18,7 +19,7 @@ class Context:
     include_local: list[str]
     include_icloud: list[str]
     logging_config: str
-    log_path: str
+    log_path: Path
     retry_period: timedelta
     icloud_check_period: timedelta
     icloud_refresh_period: timedelta

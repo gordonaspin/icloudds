@@ -10,7 +10,7 @@ import logging
 from datetime import timedelta
 import importlib.metadata
 import tempfile
-
+from pathlib import Path
 import click
 from click import version_option
 from watchdog.observers import Observer
@@ -30,7 +30,7 @@ def load_regexes(name: str) -> list[str]:
     """
     Load regexes from file and return as array of strings
     """
-    if not os.path.isfile(name):
+    if not Path.is_file(name):
         return []
     with open(file=name, encoding="utf-8") as f:
         return [line.strip() for line in f.readlines() if not line.startswith("#")]
@@ -131,22 +131,22 @@ def main(directory: str,
     """
     main
     """
-    log_path = setup_logging(logging_config=logging_config)
+    log_path = setup_logging(logging_config=Path(logging_config))
     logger.info("%s %s", NAME, importlib.metadata.version(NAME))
     if password is not None:
         KeywordFilter.add_keyword(password)
     if directory is None:
         logger.error("Local directory is required")
         sys.exit(constants.ExitCode.EXIT_FAILED_MISSING_COMMAND.value)
-    if not os.path.isdir(directory):
+    if not Path.is_dir(directory):
         logger.error("Local directory %s does not exist or is not a directory", directory)
         sys.exit(constants.ExitCode.EXIT_FAILED_NOT_A_DIRECTORY.value)
     if username is None:
         logger.error("iCloud username is required")
         sys.exit(constants.ExitCode.EXIT_FAILED_MISSING_COMMAND.value)
 
-    directory = os.path.realpath(os.path.normpath(directory))
-    lock_file = os.path.join(tempfile.gettempdir(), "icloudds.lock")
+    directory = Path.resolve(Path(directory))
+    lock_file = Path(tempfile.gettempdir()).joinpath(tempfile.gettempdir(), "icloudds.lock")
     lock: InterProcessLock = InterProcessLock(lock_file)
     if lock.acquire(blocking=False):
         try:
@@ -176,8 +176,8 @@ def main(directory: str,
             observer.join()
         finally:
             lock.release()
-            if os.path.exists(lock_file):
-                os.remove(lock_file)
+            if lock_file.exists():
+                lock_file.unlink()
             sys.exit(constants.ExitCode.EXIT_NORMAL.value)
     else:
         print(f"Another instance of icloudds is running. Check for {lock_file} file")
