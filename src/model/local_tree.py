@@ -101,11 +101,16 @@ class LocalTree(BaseTree):
             self._root[str(path)] = _obj
         else:
             if self._root_path.joinpath(path).is_file():
+                # add file entry
                 stat_entry = self._root_path.joinpath(path).stat()
                 self._root[str(path)] = LocalFileInfo(
                     name=path.name, stat_entry=stat_entry)
             elif self._root_path.joinpath(path).is_dir():
+                # add folder entry
                 self._root[str(path)] = LocalFolderInfo(path.name)
+            elif str(path) in self._root:
+                # path is neither file nor folder, remove if in _root
+                self._root.pop(str(path))
         return self._root.get(str(path), None)
 
     def _add_children(self, path: Path):

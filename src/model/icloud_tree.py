@@ -85,7 +85,8 @@ class ICloudTree(BaseTree):
         self.drive: pyicloud.services.drive.DriveService = None
         self._is_authenticated: bool = False
         self.ctx: Context = ctx
-        self._threadpool: ThreadPoolExecutor = ThreadPoolExecutor((os.cpu_count() or 1) * 4)
+        self._threadpool: ThreadPoolExecutor = ThreadPoolExecutor(
+            max((os.cpu_count() or 1) * 4, constants.DOWNLOAD_WORKERS))
         super().__init__(
             root_path=ctx.directory,
             ignores=ctx.ignore_icloud,
@@ -214,10 +215,9 @@ class ICloudTree(BaseTree):
                 continue
             if child.type == "folder":
                 cfi = self.add(path=child_path, _obj=ICloudFolderInfo(child), _root=root)
-                logger.debug("iCloud Drive %s %s %s",
+                logger.debug("iCloud Drive %s processing folder %s",
                              "root" if root is self._root else "trash",
-                              child_path,
-                              cfi)
+                              child_path)
                 if recursive:
                     if executor is not None:
                         future = executor.submit(
@@ -302,7 +302,9 @@ class ICloudTree(BaseTree):
             cfi = self.root.get(str(path), None)
             dfi = self.root.get(str(dest_path.parent), None)
             if cfi is not None and dfi is not None:
-                self.drive.move_nodes_to_node([cfi.node], dfi.node)
+                res = self.drive.move_nodes_to_node([cfi.node], dfi.node)
+                status = res['items'][0]['status']
+                logger.debug("iCloud Drive moved %s result: %s", path, status)
                 self.root.pop(str(path))
                 self.root[str(dest_path)] = cfi
                 result = Move(success=True, path=path, dest_path=dest_path)
@@ -327,7 +329,9 @@ class ICloudTree(BaseTree):
         try:
             cfi = self.root.get(str(path), None)
             if cfi is not None:
-                cfi.node.rename(dest_path.name)
+                res = cfi.node.rename(dest_path.name)
+                status = res['items'][0]['status']
+                logger.debug("iCloud Drive renamed %s result: %s", path, status)
                 self.root.pop(str(path))
                 self.root[str(dest_path)] = cfi
                 result = Rename(success=True, path=dest_path)
@@ -428,7 +432,9 @@ class ICloudTree(BaseTree):
                 folder_path = folder_path.joinpath(folder)
                 if str(folder_path) not in self._root:
                     logger.debug("iCloud Drive creating parent folder %s...", folder_path)
-                    parent_node.mkdir(folder)
+                    res = parent_node.mkdir(folder)
+                    status = res['folders'][0]['status']
+                    logger.debug("iCloud Drive mkdir %s result: %s", path, status)                    
                     self.process_folder(root=self._root, path=_path, ignore=True,recursive=False)
                     parent_cfi = self._root[str(folder_path)]
                     parent_node = parent_cfi.node

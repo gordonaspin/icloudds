@@ -3,7 +3,6 @@
 This module provides the EventHandler class which monitors file system events
 and synchronizes changes between local and iCloud storage in a bi-directional manner.
 """
-from os.path import commonpath
 from pathlib import Path
 import logging
 from threading import Lock
@@ -39,8 +38,19 @@ from model.file_info import (
     ICloudFolderInfo
 )
 from model.action_result import MkDir, Delete, Upload, Rename, Move, Download, Nil
-from model.thread_safe import ThreadSafeList, ThreadSafeSet
-from event.icloud_event import ICloudFolderModifiedEvent
+from model.thread_safe import ThreadSafeSet
+
+from event.icloud_event import ( # pylint: disable=no-name-in-module
+    ICloudFolderModifiedEvent,
+    ICDSSystemEvent,
+    ICDSFileCreatedEvent,
+    ICDSFileModifiedEvent,
+    ICDSFileMovedEvent,
+    ICDSFileDeletedEvent,
+    ICDSFolderCreatedEvent,
+    ICDSFolderModifiedEvent,
+    ICDSFolderMovedEvent,
+    ICDSFolderDeletedEvent)
 from event.icloud_event import QueuedEvent
 
 logger = logging.getLogger(__name__)  # __name__ is a common choice
@@ -77,9 +87,10 @@ class EventHandler(RegexMatchingEventHandler):
         - Suppressed paths: Local deletions and refresh-applied changes exclude watchdog events
 
         5. EXCEPTION HANDLING & RETRIES:
-        - Failed operations stored in _exception_events
-        - Periodically retried via _retry_exception_events job (configurable interval)
-        - Network/auth errors trigger iCloud tree exception handling
+        - There is little to go wrong with file system events that cannot be anticipated.
+        - All iCloud interaction is over the network and things can break there. Each operation
+        - with iCloud is submitted on a thread with a return value in the future that contains
+        - context to retry (or not)
 
         MAIN LOOP (run method):
         1. Initial local and iCloud refresh + initial sync
@@ -113,7 +124,6 @@ class EventHandler(RegexMatchingEventHandler):
         self._refresh_is_running = False
         self._event_queue: Queue = Queue()
         self._refresh_queue: Queue = Queue()
-        self._exception_events: ThreadSafeList = ThreadSafeList()
         self._suppressed_paths: ThreadSafeSet = ThreadSafeSet()
         self._limited_threadpool: ThreadPoolExecutor = ThreadPoolExecutor(
             max_workers=1)
@@ -121,14 +131,14 @@ class EventHandler(RegexMatchingEventHandler):
             max_workers=ctx.max_workers)
         self._pending_futures: ThreadSafeSet = ThreadSafeSet()
         self._event_table = {
-            FileCreatedEvent: self._handle_file_created_event,
-            FileModifiedEvent: self._handle_file_modified_event,
-            FileMovedEvent: self._handle_file_moved_event,
-            FileDeletedEvent: self._handle_file_deleted_event,
-            DirCreatedEvent: self._handle_dir_created_event,
-            DirModifiedEvent: self._handle_dir_modified_event,
-            DirMovedEvent: self._handle_dir_moved_event,
-            DirDeletedEvent: self._handle_dir_deleted_event,
+            ICDSFileCreatedEvent: self._handle_file_created_event,
+            ICDSFileModifiedEvent: self._handle_file_modified_event,
+            ICDSFileMovedEvent: self._handle_file_moved_event,
+            ICDSFileDeletedEvent: self._handle_file_deleted_event,
+            ICDSFolderCreatedEvent: self._handle_folder_created_event,
+            ICDSFolderModifiedEvent: self._handle_folder_modified_event,
+            ICDSFolderMovedEvent: self._handle_folder_moved_event,
+            ICDSFolderDeletedEvent: self._handle_folder_deleted_event,
             ICloudFolderModifiedEvent: self._handle_icloud_folder_modified_event
         }
 
@@ -183,8 +193,6 @@ class EventHandler(RegexMatchingEventHandler):
         # Register periodic jobs and start timeloop
         self._timeloop.job(interval=self.ctx.icloud_check_period)(
             self._is_icloud_dirty)
-        self._timeloop.job(interval=self.ctx.retry_period)(
-            self._retry_exception_events)
         self._timeloop.job(interval=self.ctx.icloud_refresh_period)(
             self._refresh_icloud)
         self._timeloop.start()
@@ -276,10 +284,9 @@ class EventHandler(RegexMatchingEventHandler):
         """
         if self._icloud_dirty or len(self._pending_futures) > 0 or self._event_queue.qsize() > 0:
             return
-        with self._refresh_lock:
-            logger.debug("checking if icloud is dirty...")
-            self._icloud_dirty = self._icloud.root_has_changed(
-            ) or self._icloud.trash_has_changed()
+#        with self._refresh_lock:
+        logger.debug("checking if icloud is dirty...")
+        self._icloud_dirty = self._icloud.root_has_changed() or self._icloud.trash_has_changed()
         if self._icloud_dirty:
             logger.info("iCloud Drive changes detected...")
             self._refresh_icloud(force=True)
@@ -296,7 +303,7 @@ class EventHandler(RegexMatchingEventHandler):
         events: list[QueuedEvent] = self._coalesce_events(event_collector)
         logger.debug("Dispatching %d coalesced events...", len(events))
         for qe in events:
-            event: FileSystemEvent = qe.event
+            event: ICDSSystemEvent = qe.event
             logger.debug("Dispatching event: %s", event)
             self._suppressed_paths.add(event.src_path)
             self._suppressed_paths.add(event.dest_path)
@@ -472,7 +479,7 @@ class EventHandler(RegexMatchingEventHandler):
                     and isinstance(left_fi, LocalFileInfo)):
                     logger.debug("%s is newer for %s, uploading to iCloud Drive...", left, path)
                     self._handle_file_modified_event(
-                        FileModifiedEvent(src_path=path))
+                        ICDSFileModifiedEvent(src_path=path))
                     uploaded_count += 1
                 elif left_fi.modified_time < right_fi.modified_time:
                     logger.debug("%s is newer for %s, downloading to Local...", right, path)
@@ -496,10 +503,10 @@ class EventHandler(RegexMatchingEventHandler):
                 continue
             logger.debug("Only in local: %s %s", path, self._local.root[path])
             if isinstance(self._local.root[path], LocalFolderInfo):
-                self._handle_dir_created_event(DirCreatedEvent(src_path=Path(path)))
+                self._handle_folder_created_event(ICDSFolderCreatedEvent(src_path=Path(path)))
             else:
                 self._handle_file_modified_event(
-                    FileModifiedEvent(src_path=Path(path)))
+                    ICDSFileModifiedEvent(src_path=Path(path)))
                 uploaded_count += 1
         return uploaded_count
 
@@ -552,24 +559,23 @@ class EventHandler(RegexMatchingEventHandler):
             )
         )
 
-    def _handle_file_created_event(self, event: FileCreatedEvent) -> None:
+    def _handle_file_created_event(self, event: ICDSFileCreatedEvent) -> None:
         """
         Handle a file created event by treating it as a file modified event.
         """
         self._handle_file_modified_event(event)
 
-    def _handle_file_modified_event(self, event: FileModifiedEvent) -> None:
+    def _handle_file_modified_event(self, event: ICDSFileModifiedEvent) -> None:
         """
         Handle a file modified/created event by uploading the file to iCloud Drive
         if it is new or newer than the iCloud Drive version.
         """
-        parent_path: Path = event.src_path.parent
         lfi: LocalFileInfo = self._local.add(event.src_path)
-
         if lfi is None:
-            logger.warning("Local file %s disappeared", event.src_path)
+            logger.warning("Local file %s disappeared after file modified", event.src_path)
             return
 
+        parent_path: Path = event.src_path.parent
         parent: ICloudFolderInfo = self._icloud.root.get(str(parent_path), None)
         cfi: ICloudFileInfo = self._icloud.root.get(str(event.src_path), None)
 
@@ -589,8 +595,8 @@ class EventHandler(RegexMatchingEventHandler):
         if parent is None:
             logger.debug("Local file %s modified/created, creating folders for %s...",
                          event.src_path, parent_path)
-            self._handle_dir_created_event(
-                DirCreatedEvent(src_path=parent_path))
+            self._handle_folder_created_event(
+                ICDSFolderCreatedEvent(src_path=parent_path))
 
         cfi = self._icloud.root.get(str(event.src_path), None)
         if cfi is None or (lfi.modified_time > cfi.modified_time) and lfi.size > 0:
@@ -605,11 +611,15 @@ class EventHandler(RegexMatchingEventHandler):
                     )
                 )
 
-    def _handle_file_moved_event(self, event: FileMovedEvent) -> None:
+    def _handle_file_moved_event(self, event: ICDSFileMovedEvent) -> None:
         """
         Handle a file moved/renamed event by renaming the file in iCloud Drive
         if the parent folder is the same, otherwise treat as delete + create.
         """
+        if self._local.add(event.dest_path) is None:
+            logger.warning("Local file %s disappeared after file moved", event.dest_path)
+            return
+
         parent_path: Path = event.src_path.parent
         dest_parent_path: Path = event.dest_path.parent
         cfi: ICloudFileInfo | ICloudFolderInfo = self._icloud.root.get(
@@ -633,7 +643,7 @@ class EventHandler(RegexMatchingEventHandler):
                 self._pending_futures.add(self._limited_threadpool.submit(
                     self._icloud.rename, event.src_path, event.dest_path))
             else:
-                self._handle_file_modified_event(FileCreatedEvent(src_path=event.dest_path))
+                self._handle_file_modified_event(ICDSFileCreatedEvent(src_path=event.dest_path))
         else:
             logger.debug("iCloud Drive moving %s %s to %s as parent is different",
                          'file' if isinstance(cfi, ICloudFileInfo) else 'folder',
@@ -642,10 +652,14 @@ class EventHandler(RegexMatchingEventHandler):
             self._pending_futures.add(self._limited_threadpool.submit(
                 self._icloud.move, event.src_path, event.dest_path))
 
-    def _handle_file_deleted_event(self, event: FileDeletedEvent) -> None:
+    def _handle_file_deleted_event(self, event: ICDSFileDeletedEvent) -> None:
         """
         Handle a file deleted event by deleting the file/folder from iCloud Drive.
         """
+        if event.src_path.exists():
+            logger.warning("Local file/folder %s reappeared after file delete", event.src_path)
+            return
+
         parent_path: Path = event.src_path.parent
         parent: ICloudFolderInfo = self._icloud.root.get(str(parent_path), None)
         cfi: ICloudFileInfo | ICloudFolderInfo = self._icloud.root.get(
@@ -659,10 +673,13 @@ class EventHandler(RegexMatchingEventHandler):
                 self._icloud.delete, event.src_path, cfi))
             self._local.root.pop(str(event.src_path), None)
 
-    def _handle_dir_created_event(self, event: DirCreatedEvent) -> None:
+    def _handle_folder_created_event(self, event: ICDSFolderCreatedEvent) -> None:
         """Handle a directory created event by creating folders in iCloud Drive if needed."""
+        if self._local.add(event.src_path) is None:
+            logger.warning("Local folder %s disappeared after file moved", event.src_path)
+            return
+
         parent_path: str = event.src_path.parent
-        self._local.add(event.src_path)
         parent: ICloudFolderInfo = self._icloud.root.get(str(parent_path), None)
         cfi: ICloudFolderInfo = self._icloud.root.get(str(event.src_path), None)
 
@@ -674,33 +691,22 @@ class EventHandler(RegexMatchingEventHandler):
             logger.debug("iCloud Drive folder %s already exists, skipping creation...",
                          event.src_path)
 
-    def _handle_dir_moved_event(self, event: DirMovedEvent) -> None:
+    def _handle_folder_moved_event(self, event: ICDSFolderMovedEvent) -> None:
         """
         Handle a directory moved/renamed event by treating it as a file moved event.
         """
         self._handle_file_moved_event(event)
 
-    def _handle_dir_deleted_event(self, event: DirDeletedEvent) -> None:
+    def _handle_folder_deleted_event(self, event: ICDSFolderDeletedEvent) -> None:
         """
         Handle a directory deleted event by deleting the folder from iCloud Drive.
         """
-        self._handle_file_deleted_event(event)
+        self._handle_file_deleted_event(ICDSFileDeletedEvent(event))
 
-    def _handle_dir_modified_event(self, _event: DirModifiedEvent) -> None:
+    def _handle_folder_modified_event(self, _event: ICDSFolderModifiedEvent) -> None:
         """
         Ignore directory modified events as they do not affect iCloud Drive.
         """
-
-    def _retry_exception_events(self) -> None:
-        """Retry events that previously failed by reprocessing them."""
-        if self._exception_events:
-            logger.debug("Reprocessing %d events...", len(self._exception_events))
-            for event in self._exception_events:
-                logger.debug("Reprocessing event: %s", event)
-                self._event_table.get(
-                    type(event),
-                    lambda e: logger.debug("Unhandled event %s", e))(event)
-            self._exception_events.clear()
 
     def _dump_state(self, local: LocalTree, icloud: ICloudTree, refresh: ICloudTree = None):
         """
@@ -749,6 +755,7 @@ class EventHandler(RegexMatchingEventHandler):
 
         return coalesced
 
+    # pylint: disable=too-many-branches
     def _rationalize_dir_moves(self, events: list[QueuedEvent]) -> list[QueuedEvent]:
         """
         Filter redundant events when directory moves occur. Removes nested directory move events
@@ -756,39 +763,48 @@ class EventHandler(RegexMatchingEventHandler):
         implicitly covered by a directory move (e.g., files created/deleted/moved within a
         moved directory). This prevents duplicate or conflicting operations on the same paths.
         """
-        dir_moves = [qe for qe in events if isinstance(
-            qe.event, DirMovedEvent)]
+        dir_moves = [qe for qe in events if isinstance(qe.event, ICDSFolderMovedEvent)]
         if not dir_moves:
             return events
 
-        filtered = []
+        filtered: list[QueuedEvent] = []
         for qe in events:
-            # 1️⃣ Drop nested DirMovedEvents (strict subdirectories only)
-            if isinstance(qe.event, DirMovedEvent):
-                src = qe.event.src_path
+            # Drop nested ICDSFolderMovedEvent (strict subdirectories only)
+            if isinstance(qe.event, ICDSFolderMovedEvent):
+                src_path = qe.event.src_path
                 is_nested = False
                 for other_qe in dir_moves:
                     if qe is other_qe:
                         continue
-                    other_src = other_qe.event.src_path
-                    if commonpath([src, other_src]) == other_src:
-                        is_nested = True
-                        break
-                    if is_nested:
-                        break
+                    other_src = Path(other_qe.event.src_path)
+                    try:
+                        # If src_path is inside other_src and not equal, it's nested
+                        if src_path != other_src:
+                            src_path.relative_to(other_src)
+                            is_nested = True
+                            break
+                    except Exception:
+                        pass
+                if is_nested:
+                    continue
 
-            # 2️⃣ Drop file events covered by a DirMovedEvent
-            if isinstance(qe.event, (FileMovedEvent, FileCreatedEvent, FileDeletedEvent)):
-                src = qe.event.src_path
+            # Drop file events covered by a ICDSFolderMovedEvent
+            if isinstance(qe.event, (ICDSFileMovedEvent,
+                                     ICDSFileCreatedEvent,
+                                     ICDSFileDeletedEvent)):
+                src = Path(qe.event.src_path)
                 covered = False
                 for dm_qe in dir_moves:
                     dm_src = dm_qe.event.src_path
                     if src == dm_src:
                         covered = True
                         break
-                    if commonpath([src, dm_src]) == dm_src:
+                    try:
+                        src.relative_to(dm_src)
                         covered = True
                         break
+                    except Exception:
+                        pass
                 if covered:
                     continue
 
@@ -796,17 +812,24 @@ class EventHandler(RegexMatchingEventHandler):
 
         return filtered
 
-    def _modify_event(self, event: FileSystemEvent) -> FileSystemEvent:
+    def _modify_event(self, event: FileSystemEvent) -> ICDSSystemEvent:
         """
         Modify event paths to be relative to the monitored directory.
         """
-        if hasattr(event, 'src_path') and event.src_path is not None and len(event.src_path) > 0:
-            event.src_path = Path(event.src_path).relative_to(self._absolute_directory)
-        if hasattr(event, 'dest_path') and event.dest_path is not None and len(event.dest_path) > 0:
-            event.dest_path = Path(event.dest_path).relative_to(self._absolute_directory)
-        return event
+        table = {
+            FileCreatedEvent: ICDSFileCreatedEvent,
+            FileModifiedEvent: ICDSFileModifiedEvent,
+            FileMovedEvent: ICDSFileMovedEvent,
+            FileDeletedEvent: ICDSFileDeletedEvent,
+            DirCreatedEvent: ICDSFolderCreatedEvent,
+            DirModifiedEvent: ICDSFolderModifiedEvent,
+            DirMovedEvent: ICDSFolderMovedEvent,
+            DirDeletedEvent: ICDSFolderDeletedEvent,
+        }
+        e = table[type(event)](event, None, self.ctx.directory)
+        return e
 
-    def _enqueue_event(self, event: FileSystemEvent, queue: Queue) -> None:
+    def _enqueue_event(self, event: ICDSSystemEvent, queue: Queue) -> None:
         """
         Enqueue a filesystem event for processing unless it is suppressed or should be ignored.
         """
@@ -816,9 +839,7 @@ class EventHandler(RegexMatchingEventHandler):
             return
         if self._local.ignore(str(event.src_path)) or self._icloud.ignore(str(event.src_path)):
             return
-        if (hasattr(event, 'dest_path')
-            and event.dest_path is not None
-            and len(str(event.dest_path)) > 0):
+        if event.dest_path is not None and len(str(event.dest_path)) > 0:
             if (self._local.ignore(str(event.dest_path))
                 or self._icloud.ignore(str(event.dest_path))):
                 return

@@ -20,7 +20,6 @@ class Context:
     include_icloud: list[str]
     logging_config: str
     log_path: Path
-    retry_period: timedelta
     icloud_check_period: timedelta
     icloud_refresh_period: timedelta
     debounce_period: timedelta
