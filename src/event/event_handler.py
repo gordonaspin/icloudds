@@ -621,16 +621,19 @@ class EventHandler(RegexMatchingEventHandler):
                      event.dest_path
                      )
         if parent_path == dest_parent_path:
-            logger.debug("iCloud Drive renaming %s %s to %s, as parent is the same",
-                'file' if isinstance(cfi, ICloudFileInfo) else 'folder',
-                event.src_path,
-                event.dest_path)
-            # Remove the file from the local tree
-            self._local.root.pop(str(event.src_path))
-            # Add the file back with the new name
-            self._local.add(event.dest_path)
-            self._pending_futures.add(self._limited_threadpool.submit(
-                self._icloud.rename, event.src_path, event.dest_path))
+            if cfi is not None:
+                logger.debug("iCloud Drive renaming %s %s to %s, as parent is the same",
+                    'file' if isinstance(cfi, ICloudFileInfo) else 'folder',
+                    event.src_path,
+                    event.dest_path)
+                # Remove the file from the local tree
+                self._local.root.pop(str(event.src_path))
+                # Add the file back with the new name
+                self._local.add(event.dest_path)
+                self._pending_futures.add(self._limited_threadpool.submit(
+                    self._icloud.rename, event.src_path, event.dest_path))
+            else:
+                self._handle_file_modified_event(FileCreatedEvent(src_path=event.dest_path))
         else:
             logger.debug("iCloud Drive moving %s %s to %s as parent is different",
                          'file' if isinstance(cfi, ICloudFileInfo) else 'folder',
