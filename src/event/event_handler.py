@@ -733,7 +733,10 @@ class EventHandler(RegexMatchingEventHandler):
             if any(e.event.event_type == "deleted" for e in evs):
                 final = next(e for e in reversed(
                     evs) if e.event.event_type == "deleted")
-            # Created + modified → created
+            # Moving overrides everything, also
+            if any(e.event.event_type == "moved" for e in evs):
+                final = next(e for e in reversed(
+                    evs) if e.event.event_type == "moved")            # Created + modified → created
             elif evs[0].event.event_type == "created":
                 final = evs[0]
             coalesced.append(final)
