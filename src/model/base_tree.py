@@ -11,7 +11,7 @@ import re
 from collections.abc import Iterator
 
 from model.file_info import BaseInfo, FileInfo, FolderInfo
-from model.thread_safe import ThreadSafeDict
+from model.thread_safe import ThreadSafePathDict
 
 logger = logging.getLogger(__name__)
 
@@ -35,8 +35,8 @@ class BaseTree():
             ignores: List of regex patterns for files/folders to ignore.
             includes: List of regex patterns for files/folders to explicitly include.
         """
-        self._root: ThreadSafeDict = ThreadSafeDict()
-        self._trash: ThreadSafeDict = ThreadSafeDict()
+        self._root: ThreadSafePathDict = ThreadSafePathDict()
+        self._trash: ThreadSafePathDict = ThreadSafePathDict()
         self._root_path: Path = root_path
         self._ignores_patterns: list[str] = [
             r'.*\.com-apple-bird.*',
@@ -53,12 +53,12 @@ class BaseTree():
             re.compile(pattern) for pattern in self._includes_patterns]
 
     @property
-    def root(self) -> ThreadSafeDict:
+    def root(self) -> ThreadSafePathDict:
         """Get the thread-safe dictionary of active files and folders in the tree."""
         return self._root
 
     @property
-    def trash(self) -> ThreadSafeDict:
+    def trash(self) -> ThreadSafePathDict:
         """Get the thread-safe dictionary of deleted files and folders in the trash."""
         return self._trash
 
@@ -110,7 +110,7 @@ class BaseTree():
         """
         raise NotImplementedError("Subclasses should implement this method")
 
-    def ignore(self, path: str) -> bool:
+    def ignore(self, path: Path | str) -> bool:
         """
         Determine whether a file or folder should be ignored based on include/exclude patterns.
 
@@ -126,6 +126,9 @@ class BaseTree():
         Returns:
             True if the item should be ignored, False otherwise.
         """
+        if isinstance(path, Path):
+            path = str(path)
+
         for regex in self._ignores_regexes:
             if re.match(regex, path):
                 return True

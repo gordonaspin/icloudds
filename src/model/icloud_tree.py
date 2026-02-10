@@ -182,7 +182,7 @@ class ICloudTree(BaseTree):
         Add a file or folder to the iCloud Drive tree structure.
         """
         target = _root if _root is not None else self._root
-        target[str(path)] = _obj
+        target[path] = _obj
         return _obj
 
     def process_folder(self,
@@ -201,17 +201,17 @@ class ICloudTree(BaseTree):
         futures = []
         children = []
         result = Refresh(path=path, success=True)
-        cfi = root.get(str(path), None)
+        cfi = root.get(path, None)
         if cfi is None:
             result = Nil()
         else:
-            children = root[str(path)].node.get_children(force=True)
+            children = root[path].node.get_children(force=True)
         for child in children:
             if path == Path(BaseTree.ROOT_FOLDER_NAME):
                 child_path = Path(child.name)
             else:
                 child_path = path.joinpath(child.name)
-            if ignore and self.ignore(str(child_path)):
+            if ignore and self.ignore(child_path):
                 continue
             if child.type == "folder":
                 cfi = self.add(path=child_path, _obj=ICloudFolderInfo(child), _root=root)
@@ -262,8 +262,8 @@ class ICloudTree(BaseTree):
         Updates the tree structure accordingly.
         Returns an Delete indicating success or failure."""
         result = Nil()
-        parent: ICloudFolderInfo = self.root.get(str(path.parent), None)
-        cfi: ICloudFileInfo | ICloudFolderInfo= self.root.get(str(path), None)
+        parent: ICloudFolderInfo = self.root.get(path.parent, None)
+        cfi: ICloudFileInfo | ICloudFolderInfo = self.root.get(path, None)
         if parent is not None and cfi is not None:
             parent_node: DriveNode = parent.node
             child_node: DriveNode = cfi.node
@@ -272,7 +272,7 @@ class ICloudTree(BaseTree):
                 status = res['items'][0]['status']
                 logger.debug("iCloud Drive deleted %s result: %s", path, status)
                 parent_node.remove(child_node)
-                self.root.pop(str(path))
+                self.root.pop(path)
                 result = Delete(success=True, path=path)
             except ValueError as e:
                 logger.warning("ValueError in delete %s", e)
@@ -299,14 +299,14 @@ class ICloudTree(BaseTree):
         """
         result = Nil()
         try:
-            cfi = self.root.get(str(path), None)
-            dfi = self.root.get(str(dest_path.parent), None)
+            cfi = self.root.get(path, None)
+            dfi = self.root.get(dest_path.parent, None)
             if cfi is not None and dfi is not None:
                 res = self.drive.move_nodes_to_node([cfi.node], dfi.node)
                 status = res['items'][0]['status']
                 logger.debug("iCloud Drive moved %s result: %s", path, status)
-                self.root.pop(str(path))
-                self.root[str(dest_path)] = cfi
+                self.root.pop(path)
+                self.root[dest_path] = cfi
                 result = Move(success=True, path=path, dest_path=dest_path)
         except Exception as e:
             logger.error("Exception in move %s", e)
@@ -327,13 +327,13 @@ class ICloudTree(BaseTree):
         """
         result = Nil()
         try:
-            cfi = self.root.get(str(path), None)
+            cfi = self.root.get(path, None)
             if cfi is not None:
                 res = cfi.node.rename(dest_path.name)
                 status = res['items'][0]['status']
                 logger.debug("iCloud Drive renamed %s result: %s", path, status)
-                self.root.pop(str(path))
-                self.root[str(dest_path)] = cfi
+                self.root.pop(path)
+                self.root[dest_path] = cfi
                 result = Rename(success=True, path=dest_path)
         except Exception as e:
             logger.error("Exception in rename %s", e)
@@ -354,7 +354,7 @@ class ICloudTree(BaseTree):
         try:
             self.delete(path=path, lfi=lfi, retry=0)
             parent_path: Path = path.parent
-            parent_node: DriveNode = self._root[str(parent_path)].node
+            parent_node: DriveNode = self._root[parent_path].node
             with open(self._root_path.joinpath(path), 'rb') as f:
                 parent_node.upload(f,
                                    mtime=lfi.modified_time.timestamp(),
@@ -426,22 +426,22 @@ class ICloudTree(BaseTree):
         try:
             folder_path = Path(BaseTree.ROOT_FOLDER_NAME)
             _path = folder_path
-            parent_cfi = self._root[str(folder_path)]
+            parent_cfi = self._root[folder_path]
             parent_node: DriveNode = parent_cfi.node
             for folder in path.parts:
                 folder_path = folder_path.joinpath(folder)
-                if str(folder_path) not in self._root:
+                if folder_path not in self._root:
                     logger.debug("iCloud Drive creating parent folder %s...", folder_path)
                     res = parent_node.mkdir(folder)
                     status = res['folders'][0]['status']
                     logger.debug("iCloud Drive mkdir %s result: %s", path, status)
                     self.process_folder(root=self._root, path=_path, ignore=True,recursive=False)
-                    parent_cfi = self._root[str(folder_path)]
+                    parent_cfi = self._root[folder_path]
                     parent_node = parent_cfi.node
                     _path = folder_path
                     result = MkDir(success=True, path=path)
                 else:
-                    parent_node = self._root[str(folder_path)].node
+                    parent_node = self._root[folder_path].node
                     _path = folder_path
             if result is None:
                 result = Nil()

@@ -94,24 +94,24 @@ class LocalTree(BaseTree):
     def add(self, path: Path, _obj=None, _root:dict=None) -> LocalFileInfo | LocalFolderInfo:
         """Add a file or folder at the given path to the local tree structure."""
         for parent in path.parents:
-            if parent.name and str(parent) not in self._root:
-                self._root[str(parent)] = LocalFolderInfo(name=parent.name)
+            if parent.name and parent not in self._root:
+                self._root[parent] = LocalFolderInfo(name=parent.name)
 
         if _obj is not None:
-            self._root[str(path)] = _obj
+            self._root[path] = _obj
         else:
             if self._root_path.joinpath(path).is_file():
                 # add file entry
                 stat_entry = self._root_path.joinpath(path).stat()
-                self._root[str(path)] = LocalFileInfo(
+                self._root[path] = LocalFileInfo(
                     name=path.name, stat_entry=stat_entry)
             elif self._root_path.joinpath(path).is_dir():
                 # add folder entry
-                self._root[str(path)] = LocalFolderInfo(path.name)
-            elif str(path) in self._root:
+                self._root[path] = LocalFolderInfo(path.name)
+            elif path in self._root:
                 # path is neither file nor folder, remove if in _root
-                self._root.pop(str(path))
-        return self._root.get(str(path), None)
+                self._root.pop(path)
+        return self._root.get(path, None)
 
     def _add_children(self, path: Path):
         """Populate files and subfolders for a single folder."""
@@ -121,13 +121,13 @@ class LocalTree(BaseTree):
                     path = Path(entry.path).relative_to(self._root_path)
                     stat_entry = entry.stat()
                     if entry.is_file(follow_symlinks=True):
-                        if self.ignore(str(path)):
+                        if self.ignore(path):
                             continue
                         logger.debug("Local file %s", path)
-                        self.add(path, LocalFileInfo(
+                        self.add(path=path, _obj=LocalFileInfo(
                             name=entry.name, stat_entry=stat_entry))
                     elif entry.is_dir(follow_symlinks=True):
-                        if self.ignore(str(path)):
+                        if self.ignore(path):
                             continue
                         self.add(path=path, _obj=LocalFolderInfo(name=entry.name))
                         self._add_children(entry.path)

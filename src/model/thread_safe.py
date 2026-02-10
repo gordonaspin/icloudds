@@ -5,38 +5,35 @@ behaviors used elsewhere in the project. These wrappers use reentrant locks
 to ensure safe concurrent access and support context-manager locking for
 batch operations.
 """
-
 from threading import RLock
+from pathlib import Path
 from collections import UserDict, UserList
+from typing import Union, Any, Iterator, Tuple, Iterable, Set
 
-
-class ThreadSafeDict(UserDict):
-    """A dict-like mapping with thread-safe operations using a reentrant lock.
-
-    Most mapping methods acquire the lock before delegating to the base
-    implementation. Use the object as a context manager to acquire the lock
-    manually for multi-step atomic operations::
-
-        with tsd:
-            # perform multiple reads/writes
+class ThreadSafePathDict(UserDict):
+    """
+    A thread-safe dict using RLock that accepts str or Path objects 
+    as indices by normalizing them to a standard string representation.
     """
 
     def __init__(self, *args, **kwargs):
-        """Initialize the mapping and the reentrant lock."""
+        self._lock = RLock()
         super().__init__(*args, **kwargs)
-        self._lock = RLock()  # Use RLock for reentrant locking
 
+    def _normalize(self, key: Union[str, Path]) -> str:
+        return str(Path(key))
+
+    # accessor methods
     def get(self, key, default=None):
         with self._lock:
-            return super().get(key, default)
+            return super().get(self._normalize(key), default)
 
     def pop(self, key, default=None):
         with self._lock:
-            return super().pop(key, default)
+            return super().pop(self._normalize(key), default)
 
     def update(self, other=None, **kwargs):  # pylint: disable=arguments-differ
         """Update mapping with another mapping or iterable and/or keyword args.
-
         Uses the same signature as the built-in `dict.update(other=None, **kwargs)`
         to avoid Pylint W0221 (arguments-differ) when overriding.
         """
@@ -51,38 +48,31 @@ class ThreadSafeDict(UserDict):
         with self._lock:
             super().clear()
 
-    def keys(self):
-        with self._lock:
-            return super().keys()
+    # --- Context Manager Methods ---
+    def __enter__(self):
+        """Allows 'with d:' to hold a lock for atomic multi-step operations."""
+        self._lock.acquire()
+        return self
 
-    def values(self):
-        with self._lock:
-            return super().values()
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self._lock.release()
 
-    def items(self):
+    # --- Thread-Safe Accessors ---
+    def __getitem__(self, key: Union[str, Path]) -> Any:
         with self._lock:
-            return super().items()
+            return super().__getitem__(self._normalize(key))
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key: Union[str, Path], value: Any) -> None:
         with self._lock:
-            super().__setitem__(key, value)
+            super().__setitem__(self._normalize(key), value)
 
-    def __getitem__(self, key):
+    def __delitem__(self, key: Union[str, Path]) -> None:
         with self._lock:
-            return super().__getitem__(key)
-
-    def __delitem__(self, key):
-        with self._lock:
-            super().__delitem__(key)
+            super().__delitem__(self._normalize(key))
 
     def __contains__(self, key):
         with self._lock:
-            return super().__contains__(key)
-
-    def __iter__(self):
-        # Returns a snapshot so the loop can run without holding the lock
-        with self._lock:
-            return iter(list(self.data.keys()))
+            return super().__contains__(self._normalize(key))
 
     def __len__(self):
         with self._lock:
@@ -92,79 +82,139 @@ class ThreadSafeDict(UserDict):
         """Return the length without acquiring the lock (fast, potentially racy)."""
         return super().__len__()
 
-    # Ensure context manager for the lock itself
-    def __enter__(self):
-        self._lock.acquire()
-        return self
+    # --- Iterator Methods (Snapshotting) ---
+    def __iter__(self) -> Iterator[str]:
+        """Iterates over a copy of keys to remain thread-safe."""
+        with self._lock:
+            return iter(list(self.data.keys()))
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self._lock.release()
+    def keys(self):
+        with self._lock:
+            # Returns a snapshot set to support set operations
+            return set(self.data.keys())
+
+    def values(self) -> Iterator[Any]:
+        with self._lock:
+            return iter(list(self.data.values()))
+
+    def items(self) -> Iterator[Tuple[str, Any]]:
+        with self._lock:
+            return iter(list(self.data.items()))
+
+     # --- Set Operation Support ---
+    def __or__(self, other: Union[dict, 'ThreadSafePathDict']) -> 'ThreadSafePathDict':
+        """Union: Returns a NEW dictionary containing keys from both."""
+        with self._lock:
+            # Create a copy and update it with the other mapping
+            new_dict = self.__class__(self.data)
+            new_dict.update(other)
+            return new_dict
+
+    def __and__(self, other: Iterable[Any]) -> Set[str]:
+        """Intersection: Returns a set of keys present in both."""
+        # Normalize the other keys first
+        other_keys = {self._normalize(k) for k in other}
+        with self._lock:
+            return set(self.data.keys()) & other_keys
+
+    def __sub__(self, other: Iterable[Any]) -> Set[str]:
+        """Difference: Returns a set of keys in self but NOT in other."""
+        other_keys = {self._normalize(k) for k in other}
+        with self._lock:
+            return set(self.data.keys()) - other_keys
+
+    def __xor__(self, other: Iterable[Any]) -> Set[str]:
+        """Symmetric Difference: Keys in either self or other, but not both."""
+        other_keys = {self._normalize(k) for k in other}
+        with self._lock:
+            return set(self.data.keys()) ^ other_keys
 
     def __repr__(self):
         with self._lock:
             return f"ThreadSafeDict({super().__repr__()})"
 
 
-class ThreadSafeList(UserList):
-    """A list-like container with thread-safe operations using a reentrant lock.
-
-    Common mutation and access methods acquire the lock before delegating to
-    the underlying `UserList` implementation. Use as a context manager to
-    perform multiple operations atomically::
-
-        with tsl:
-            # multiple appends/pops
+class ThreadSafePathList(UserList):
     """
+    A thread-safe list using RLock that accepts str or Path objects 
+    as indices by normalizing them to a standard string representation.
+    """
+    def __init__(self, *args, **kwargs):
+        self._lock = RLock()
+        super().__init__(*args, **kwargs)
 
-    def __init__(self, *args):
-        """Initialize the list and its reentrant lock."""
-        super().__init__(*args)
-        self._lock = RLock()  # Use RLock for reentrant locking
+    def _normalize(self, value: Any) -> Any:
+        """Helper to ensure paths are stored consistently as strings."""
+        if isinstance(value, (str, Path)):
+            return str(Path(value))
+        return value
 
-    def append(self, item):
-        """Append `item` to the list (thread-safe)."""
+    # --- Core Indexing Methods ---
+    def __getitem__(self, index: Union[int, str, Path, slice]) -> Any:
         with self._lock:
-            super().append(item)
-
-    def extend(self, other):
-        """Extend list by appending elements from the iterable `other` (thread-safe)."""
-        with self._lock:
-            super().extend(other)
-
-    def insert(self, i, item):
-        """Insert `item` before position `i` (thread-safe)."""
-        with self._lock:
-            super().insert(i, item)
-
-    def pop(self, i=-1):
-        """Remove and return item at index `i` (default last) (thread-safe)."""
-        with self._lock:
-            return super().pop(i)
-
-    def remove(self, item):
-        """Remove first occurrence of `item` (thread-safe)."""
-        with self._lock:
-            super().remove(item)
-
-    def __setitem__(self, index, value):
-        """Set `self[index] = value` (thread-safe)."""
-        with self._lock:
-            super().__setitem__(index, value)
-
-    def __delitem__(self, index):
-        """Delete item at `index` (thread-safe)."""
-        with self._lock:
-            super().__delitem__(index)
-
-    def __getitem__(self, index):
-        """Return the item at `index` (thread-safe)."""
-        with self._lock:
+            if isinstance(index, (str, Path)):
+                target = self._normalize(index)
+                try:
+                    return self.data[self.data.index(target)]
+                except ValueError as e:
+                    raise KeyError(f"Path {index} not found in list.") from e
             return super().__getitem__(index)
 
+    def __setitem__(self, index: int, item: Any) -> None:
+        """Normalizes the item before setting it at the specified index."""
+        with self._lock:
+            super().__setitem__(index, self._normalize(item))
+
+    def __delitem__(self, index: Union[int, str, Path, slice]) -> None:
+        """Deletes item by integer index or by path search."""
+        with self._lock:
+            if isinstance(index, (str, Path)):
+                target = self._normalize(index)
+                try:
+                    self.data.remove(target)
+                except ValueError as e:
+                    raise KeyError(f"Path {index} not found in list.") from e
+            else:
+                super().__delitem__(index)
+
+    # --- Mutators ---
+    def append(self, item: Any) -> None:
+        with self._lock:
+            self.data.append(self._normalize(item))
+
+    def extend(self, other: Iterable[Any]) -> None:
+        normalized = [self._normalize(i) for i in other]
+        with self._lock:
+            self.data.extend(normalized)
+
+    def insert(self, i: int, item: Any) -> None:
+        """Insert normalized item at index i."""
+        with self._lock:
+            self.data.insert(i, self._normalize(item))
+
+    def pop(self, i: int = -1) -> Any:
+        """Remove and return item at index i (default last)."""
+        with self._lock:
+            return self.data.pop(i)
+
+    def remove(self, item: Any) -> None:
+        """Remove the first occurrence of the (normalized) item."""
+        target = self._normalize(item)
+        with self._lock:
+            self.data.remove(target)
+
+    # --- Context Manager ---
+    def __enter__(self):
+        self._lock.acquire()
+        return self
+
+    def __exit__(self, *args):
+        self._lock.release()
+
+    # --- Iteration ---
     def __iter__(self):
         """Return an iterator over a snapshot of the list (does not hold the lock)."""
         with self._lock:
-            # Returns a snapshot so the loop can run without holding the lock
             return iter(list(self.data))
 
     def __len__(self):
@@ -181,19 +231,11 @@ class ThreadSafeList(UserList):
         with self._lock:
             return item in self.data
 
-    def __enter__(self):
-        """Acquire the underlying lock and return self for use as a context manager."""
-        self._lock.acquire()
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """Release the underlying lock when exiting the context manager."""
-        self._lock.release()
-
     def __repr__(self):
         """Return a thread-safe string representation of the list."""
         with self._lock:
             return f"ThreadSafeList({super().__repr__()})"
+
 
 class ThreadSafeSet:
     """A thread-safe set implementation using a threading.Lock."""
