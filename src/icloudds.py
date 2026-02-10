@@ -167,7 +167,7 @@ def main(directory: str,
             event_handler.run()
             observer.join()
         except Exception as e:
-            logger.error("Exception in main thread %e", e)
+            logger.error("Exception in main thread %s", e)
         finally:
             lock.release()
             if lock_file.exists():
