@@ -10,7 +10,7 @@ echo "Project: ${PROJECT}"
 echo "Current ${PROJECT} version: ${ICLOUDDS_VERSION}"
 echo "Hash: ${REMOTE_HASH}"
 
-scripts/build
+scripts/build.sh
 
 docker build \
   --build-arg CACHE_BUST=${REMOTE_HASH} \
