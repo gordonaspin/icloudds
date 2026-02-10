@@ -434,7 +434,7 @@ class ICloudTree(BaseTree):
                     logger.debug("iCloud Drive creating parent folder %s...", folder_path)
                     res = parent_node.mkdir(folder)
                     status = res['folders'][0]['status']
-                    logger.debug("iCloud Drive mkdir %s result: %s", path, status)                    
+                    logger.debug("iCloud Drive mkdir %s result: %s", path, status)
                     self.process_folder(root=self._root, path=_path, ignore=True,recursive=False)
                     parent_cfi = self._root[str(folder_path)]
                     parent_node = parent_cfi.node
