@@ -116,7 +116,7 @@ class LocalTree(BaseTree):
     def _add_children(self, path: Path):
         """Populate files and subfolders for a single folder."""
         try:
-            with scandir(str(path)) as entries:
+            with scandir(path) as entries:
                 for entry in entries:
                     path = Path(entry.path).relative_to(self._root_path)
                     stat_entry = entry.stat()

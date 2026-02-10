@@ -11,6 +11,7 @@ import re
 from collections.abc import Iterator
 
 from model.file_info import BaseInfo, FileInfo, FolderInfo
+# pylint: disable=no-name-in-module
 from model.thread_safe import ThreadSafePathDict
 
 logger = logging.getLogger(__name__)

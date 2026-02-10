@@ -8,6 +8,7 @@ import os
 import sys
 import logging
 from datetime import timedelta
+import traceback
 import importlib.metadata
 import tempfile
 from pathlib import Path
@@ -167,7 +168,8 @@ def main(directory: str,
             event_handler.run()
             observer.join()
         except Exception as e:
-            logger.error("Exception in main thread %s", e)
+            logger.critical("Exception in main thread: %s %s", e.__class__.__name__, e)
+            logger.critical(traceback.format_exc())
         finally:
             lock.release()
             if lock_file.exists():

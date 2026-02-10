@@ -30,22 +30,16 @@ class ICDSSystemEvent():
             else:
                 self.dest_path = ''
             self.is_directory = e.is_directory
-            self.event_type = e.event_type
-            self.is_synthetic = e.is_synthetic
         else:
             self.src_path = src_path
             self.dest_path = ''
 
     def __str__(self) -> str:
-        parts = [f"type={getattr(self, 'event_type', None)}",
-                 f"src={self.src_path!s}"]
-        if getattr(self, 'dest_path', None):
-            parts.append(f"dest={self.dest_path!s}")
-        parts.append(f"dir={getattr(self, 'is_directory', False)}")
-        if getattr(self, 'is_synthetic', False):
-            parts.append("synthetic=True")
-        return f"ICDSSystemEvent({', '.join(parts)})"
-
+        return (f"{type(self).__name__}("
+                f"src={self.src_path!s}, "
+                f"dest={self.dest_path!s}, "
+                f"is_directory={self.is_directory})"
+                )
 
 class ICDSFileCreatedEvent(ICDSSystemEvent):
     """
@@ -53,10 +47,7 @@ class ICDSFileCreatedEvent(ICDSSystemEvent):
     """
     def __init__(self, e: FileCreatedEvent=None, src_path: Path=Path(), absolute_path: Path=Path()):
         super().__init__(e, src_path, absolute_path)
-        self.event_type = "created"
-
-    def __str__(self) -> str:
-        return f"ICDSFileCreatedEvent(src={self.src_path!s})"
+        self.is_directory = False
 
 class ICDSFileModifiedEvent(ICDSSystemEvent):
     """
@@ -64,10 +55,6 @@ class ICDSFileModifiedEvent(ICDSSystemEvent):
     """
     def __init__(self, e: FileModifiedEvent=None, src_path: Path=None, absolute_path: Path=None):
         super().__init__(e, src_path, absolute_path)
-        self.event_type = "modified"
-
-    def __str__(self) -> str:
-        return f"ICDSFileModifiedEvent(src={self.src_path!s})"
 
 class ICDSFileMovedEvent(ICDSSystemEvent):
     """
@@ -75,10 +62,7 @@ class ICDSFileMovedEvent(ICDSSystemEvent):
     """
     def __init__(self, e: FileMovedEvent=None, src_path: Path=None, absolute_path: Path=None):
         super().__init__(e, src_path, absolute_path)
-        self.event_type = "moved"
-
-    def __str__(self) -> str:
-        return f"ICDSFileMovedEvent(src={self.src_path!s}, dest={self.dest_path!s})"
+        self.is_directory = False
 
 class ICDSFileDeletedEvent(ICDSSystemEvent):
     """
@@ -86,10 +70,7 @@ class ICDSFileDeletedEvent(ICDSSystemEvent):
     """
     def __init__(self, e: FileDeletedEvent=None, src_path: Path=None, absolute_path: Path=None):
         super().__init__(e, src_path, absolute_path)
-        self.event_type = "deleted"
-
-    def __str__(self) -> str:
-        return f"ICDSFileDeletedEvent(src={self.src_path!s})"
+        self.is_directory = False
 
 class ICDSFolderCreatedEvent(ICDSSystemEvent):
     """
@@ -97,10 +78,7 @@ class ICDSFolderCreatedEvent(ICDSSystemEvent):
     """
     def __init__(self, e: DirCreatedEvent=None, src_path: Path=None, absolute_path: Path=None):
         super().__init__(e, src_path, absolute_path)
-        self.event_type = "created"
-
-    def __str__(self) -> str:
-        return f"ICDSFolderCreatedEvent(src={self.src_path!s})"
+        self.is_directory = True
 
 class ICDSFolderModifiedEvent(ICDSSystemEvent):
     """
@@ -108,10 +86,7 @@ class ICDSFolderModifiedEvent(ICDSSystemEvent):
     """
     def __init__(self, e: DirModifiedEvent=None, src_path: Path=None, absolute_path: Path=None):
         super().__init__(e, src_path, absolute_path)
-        self.event_type = "modified"
-
-    def __str__(self) -> str:
-        return f"ICDSFolderModifiedEvent(src={self.src_path!s})"
+        self.is_directory = True
 
 class ICDSFolderMovedEvent(ICDSSystemEvent):
     """
@@ -119,10 +94,7 @@ class ICDSFolderMovedEvent(ICDSSystemEvent):
     """
     def __init__(self, e: DirMovedEvent=None, src_path: Path=None, absolute_path: Path=None):
         super().__init__(e, src_path, absolute_path)
-        self.event_type = "moved"
-
-    def __str__(self) -> str:
-        return f"ICDSFolderMovedEvent(src={self.src_path!s}, dest={self.dest_path!s})"
+        self.is_directory = True
 
 class ICDSFolderDeletedEvent(ICDSSystemEvent):
     """
@@ -130,12 +102,9 @@ class ICDSFolderDeletedEvent(ICDSSystemEvent):
     """
     def __init__(self, e: DirDeletedEvent=None, src_path: Path=None, absolute_path: Path=None):
         super().__init__(e, src_path, absolute_path)
-        self.event_type = "deleted"
+        self.is_directory = True
 
-    def __str__(self) -> str:
-        return f"ICDSFolderDeletedEvent(src={self.src_path!s})"
-
-class ICloudFolderModifiedEvent(ICDSFolderModifiedEvent):
+class ICloudFolderModifiedEvent(ICDSSystemEvent):
     """
     Event used to signal that a folder in iCloud has been modified.
     This could be because files were added, removed, or changed within the folder.
@@ -143,10 +112,7 @@ class ICloudFolderModifiedEvent(ICDSFolderModifiedEvent):
     """
     def __init__(self, src_path: Path):
         super().__init__(None, src_path, None)
-        self.event_type = "refreshed"
-
-    def __str__(self) -> str:
-        return f"ICloudFolderModifiedEvent(src={self.src_path!s})"
+        self.is_directory = True
 
 @dataclass
 class QueuedEvent:
