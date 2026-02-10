@@ -86,9 +86,9 @@ class LocalTree(BaseTree):
             BaseTree.ROOT_FOLDER_NAME)
         self._add_children(self._root_path)
         logger.debug("Refresh local complete root has %d items, %d folders, %d files",
-                     len(self.root),
-                     sum(1 for _ in self.folders(self.root)),
-                     sum(1 for _ in self.files(self.root)))
+                     len(self._root),
+                     sum(1 for _ in self.folders(self._root)),
+                     sum(1 for _ in self.files(self._root)))
 
     @override
     def add(self, path: Path, _obj=None, _root:dict=None) -> LocalFileInfo | LocalFolderInfo:

@@ -9,6 +9,7 @@ from pathlib import Path
 import logging
 import re
 from collections.abc import Iterator
+from typing import Any, Tuple
 
 from model.file_info import BaseInfo, FileInfo, FolderInfo
 # pylint: disable=no-name-in-module
@@ -53,20 +54,15 @@ class BaseTree():
         self._includes_regexes: list[re.Pattern] = [
             re.compile(pattern) for pattern in self._includes_patterns]
 
-    @property
-    def root(self) -> ThreadSafePathDict:
-        """Get the thread-safe dictionary of active files and folders in the tree."""
-        return self._root
+    def keys(self, root:bool=True):
+        """returns keys in root or trash"""
+        root = self._root if root else self._trash
+        return root.keys()
 
-    @property
-    def trash(self) -> ThreadSafePathDict:
-        """Get the thread-safe dictionary of deleted files and folders in the trash."""
-        return self._trash
-
-    @property
-    def root_path(self) -> Path:
-        """Get the root path of the tree."""
-        return self._root_path
+    def items(self, root:bool=True) -> Iterator[Tuple[str, Any]]:
+        """returns items in root or trash"""
+        root = self._root if root else self._trash
+        return root.items()
 
     @property
     def ignores_patterns(self) -> list[str]:
@@ -98,18 +94,29 @@ class BaseTree():
     def add(self,
             path: Path,
             _obj: FileInfo | FolderInfo=None,
-            _root:dict=None) -> FileInfo | FolderInfo:
+            _root:bool=True) -> FileInfo | FolderInfo:
         """
         Add a file or folder to the tree at the specified path.
         Subclasses must implement this method with tree-specific logic.
 
         Args:
             path: The path to the file or folder to add.
+            _obj: a FileInfo or FolderInfo object
+            _root: True if adding to root, False if trash
 
         Returns:
             The FileInfo or FolderInfo object representing the added item.
         """
         raise NotImplementedError("Subclasses should implement this method")
+
+    def get(self, key, default=None, root: bool=True):
+        """gets item from root by default, else trash"""
+        target = self._root if root else self._trash
+        return target.get(key, default)
+
+    def pop(self, path: Path)-> FileInfo | FolderInfo:
+        """pops an item from root and returns it"""
+        return self._root.pop(path)
 
     def ignore(self, path: Path | str) -> bool:
         """

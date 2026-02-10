@@ -5,6 +5,7 @@ and synchronizes changes between local and iCloud storage in a bi-directional ma
 """
 from pathlib import Path
 import logging
+from typing import Type
 from threading import Lock
 from time import time, sleep, monotonic
 import shutil
@@ -266,7 +267,7 @@ class EventHandler(RegexMatchingEventHandler):
             return
 #        with self._refresh_lock:
         logger.debug("checking if icloud is dirty...")
-        self._icloud_dirty = self._icloud.root_has_changed() or self._icloud.trash_has_changed()
+        self._icloud_dirty = self._icloud.is_dirty()
         if self._icloud_dirty:
             logger.info("iCloud Drive changes detected...")
             self._refresh_icloud(force=True)
@@ -383,7 +384,7 @@ class EventHandler(RegexMatchingEventHandler):
             self._icloud, self._refresh)
         uploaded, updated_downloaded = self._sync_common(
             self._icloud, self._refresh)
-        deleted = self._icloud.root.keys() - self._refresh.root.keys()
+        deleted = self._icloud.keys() - self._refresh.keys()
         for path in deleted:
             self._delete_local(Path(path))
         return (uploaded, downloaded + updated_downloaded, len(deleted), folders_created, renamed)
@@ -402,8 +403,8 @@ class EventHandler(RegexMatchingEventHandler):
         folder_renames = []
         file_renames = []
         for docwsid in these_docwsids.keys() & those_docwsids.keys():
-            if those.root[those_docwsids[docwsid]].name != these.root[these_docwsids[docwsid]].name:
-                if isinstance(those.root[those_docwsids[docwsid]], ICloudFolderInfo):
+            if those.get(those_docwsids[docwsid]).name != these.get(these_docwsids[docwsid]).name:
+                if isinstance(those.get([those_docwsids[docwsid]]), ICloudFolderInfo):
                     folder_renames.append((docwsid, those_docwsids[docwsid]))
                 else:
                     file_renames.append((docwsid, those_docwsids[docwsid]))
@@ -430,14 +431,14 @@ class EventHandler(RegexMatchingEventHandler):
                 old_full_path.rename(new_full_path)
                 logger.info("rename %s to %s", old_path, new_path)
 
-            these.root.pop(old_path)
-            these.root[new_path] = those.root[new_path]
+            these.pop(old_path)
+            these.add(those.get(new_path))
             # Replace the old keys that start with old_path, with new_path/xxx
-            if isinstance(those.root[new_path], ICloudFolderInfo):
-                for k in list(these.root.keys()):
+            if isinstance(those.get(new_path), ICloudFolderInfo):
+                for k in list(these.keys()):
                     if k.startswith(str(old_path)) and k != str(new_path):
                         new_key = k.replace(str(old_path), str(new_path))
-                        these.root[new_key] = these.root.pop(k)
+                        these.add(new_key, these.pop(k))
         return renames
 
     def _sync_icloud(self, these: LocalTree | ICloudTree, those: ICloudTree) -> tuple[int, int]:
@@ -448,11 +449,11 @@ class EventHandler(RegexMatchingEventHandler):
         right = "Refresh" if left == "iCloud" else "iCloud"
         downloaded_count = 0
         folder_created_count = 0
-        for path in those.root.keys() - these.root.keys():
+        for path in those.keys() - these.keys():
             if self._local.ignore(path):
                 continue
             path = Path(path)
-            cfi = those.root[path]
+            cfi = those.get(path)
             self._suppressed_paths.add(path)
             if isinstance(cfi, ICloudFolderInfo):
                 if not self._absolute_directory.joinpath(path).exists():
@@ -475,10 +476,10 @@ class EventHandler(RegexMatchingEventHandler):
         right = "Refresh" if left == "iCloud" else "iCloud"
         downloaded_count = 0
         uploaded_count = 0
-        for path in these.root.keys() & those.root.keys():
+        for path in these.keys() & those.keys():
             path = Path(path)
-            left_fi = these.root[path]
-            right_fi = those.root[path]
+            left_fi = these.get(path)
+            right_fi = those.get(path)
             if isinstance(left_fi, FolderInfo) and isinstance(right_fi, FolderInfo):
                 continue
             if left_fi.modified_time != right_fi.modified_time:
@@ -509,11 +510,11 @@ class EventHandler(RegexMatchingEventHandler):
         Sync files from Local to iCloud Drive that are only present locally.
         """
         uploaded_count = 0
-        for path in self._local.root.keys() - self._icloud.root.keys():
+        for path in self._local.keys() - self._icloud.keys():
             if self._icloud.ignore(path):
                 continue
-            logger.debug("Only in local: %s %s", path, self._local.root[path])
-            if isinstance(self._local.root[path], LocalFolderInfo):
+            logger.debug("Only in local: %s %s", path, self._local.get(path))
+            if isinstance(self._local.get(path), LocalFolderInfo):
                 self._handle_folder_created(ICDSFolderCreatedEvent(src_path=Path(path)))
             else:
                 self._handle_file_modified(ICDSFileModifiedEvent(src_path=Path(path)))
@@ -525,14 +526,14 @@ class EventHandler(RegexMatchingEventHandler):
         Delete local files that correspond to items in iCloud Drive trash.
         """
         deleted_count = 0
-        for name in self._icloud.trash:
+        for name in self._icloud.keys(root=False):
             if name == BaseTree.ROOT_FOLDER_NAME:
                 continue
-            path = Path(self._icloud.trash[name].node.data.get("restorePath"))
+            path = Path(self._icloud.get(name, root=False).node.data.get("restorePath"))
             if path:
                 self._suppressed_paths.add(path)
                 self._delete_local(path)
-                lfi = self._local.root.get(path, None)
+                lfi = self._local.get(path, None)
                 if lfi and isinstance(lfi, LocalFileInfo):
                     deleted_count += 1
         return deleted_count
@@ -541,7 +542,7 @@ class EventHandler(RegexMatchingEventHandler):
         """
         Delete a local file or folder at the given path.
         """
-        lfi = self._local.root.get(path, None)
+        lfi = self._local.get(path, None)
         if lfi is not None:
             self._suppressed_paths.add(path)
             fs_object_path = self._absolute_directory.joinpath(path)
@@ -552,7 +553,7 @@ class EventHandler(RegexMatchingEventHandler):
                 logger.info("deleting local file %s", path)
                 if fs_object_path.is_file():
                     fs_object_path.unlink()
-            self._local.rootpop(path)
+            self._local.pop(path)
 
     def _handle_file_created(self, event: ICDSFileCreatedEvent) -> None:
         """
@@ -571,8 +572,8 @@ class EventHandler(RegexMatchingEventHandler):
             return
 
         parent_path: Path = event.src_path.parent
-        parent: ICloudFolderInfo = self._icloud.root.get(parent_path, None)
-        cfi: ICloudFileInfo = self._icloud.root.get(event.src_path, None)
+        parent: ICloudFolderInfo = self._icloud.get(parent_path, None)
+        cfi: ICloudFileInfo = self._icloud.get(event.src_path, None)
 
         if cfi is not None:
             if (lfi.modified_time > cfi.modified_time) and lfi.size > 0:
@@ -592,7 +593,7 @@ class EventHandler(RegexMatchingEventHandler):
                          event.src_path, parent_path)
             self._handle_folder_created(ICDSFolderCreatedEvent(src_path=parent_path))
 
-        cfi = self._icloud.root.get(event.src_path, None)
+        cfi = self._icloud.get(event.src_path, None)
         if cfi is None or (lfi.modified_time > cfi.modified_time) and lfi.size > 0:
             if isinstance(lfi, LocalFileInfo):
                 logger.debug("Local file %s modified/created, uploading to iCloud Drive...",
@@ -616,7 +617,7 @@ class EventHandler(RegexMatchingEventHandler):
 
         parent_path: Path = event.src_path.parent
         dest_parent_path: Path = event.dest_path.parent
-        cfi: ICloudFileInfo | ICloudFolderInfo = self._icloud.root.get(
+        cfi: ICloudFileInfo | ICloudFolderInfo = self._icloud.get(
             event.src_path, None)
 
         logger.debug("Local %s %s renamed to %s",
@@ -631,7 +632,7 @@ class EventHandler(RegexMatchingEventHandler):
                     event.src_path,
                     event.dest_path)
                 # Remove the file from the local tree
-                self._local.root.pop(event.src_path)
+                self._local.pop(event.src_path)
                 # Add the file back with the new name
                 self._local.add(event.dest_path)
                 self._pending_futures.add(self._limited_threadpool.submit(
@@ -655,8 +656,8 @@ class EventHandler(RegexMatchingEventHandler):
             return
 
         parent_path: Path = event.src_path.parent
-        parent: ICloudFolderInfo = self._icloud.root.get(parent_path, None)
-        cfi: ICloudFileInfo | ICloudFolderInfo = self._icloud.root.get(
+        parent: ICloudFolderInfo = self._icloud.get(parent_path, None)
+        cfi: ICloudFileInfo | ICloudFolderInfo = self._icloud.get(
             event.src_path, None)
         if parent is not None and cfi is not None:
             # Delete the file from iCloud Drive
@@ -665,7 +666,7 @@ class EventHandler(RegexMatchingEventHandler):
                             event.src_path)
             self._pending_futures.add(self._limited_threadpool.submit(
                 self._icloud.delete, event.src_path, cfi))
-            self._local.root.pop(event.src_path, None)
+            self._local.pop(event.src_path)
 
     def _handle_folder_created(self, event: ICDSFolderCreatedEvent) -> None:
         """Handle a directory created event by creating folders in iCloud Drive if needed."""
@@ -674,8 +675,8 @@ class EventHandler(RegexMatchingEventHandler):
             return
 
         parent_path: str = event.src_path.parent
-        parent: ICloudFolderInfo = self._icloud.root.get(parent_path, None)
-        cfi: ICloudFolderInfo = self._icloud.root.get(event.src_path, None)
+        parent: ICloudFolderInfo = self._icloud.get(parent_path, None)
+        cfi: ICloudFolderInfo = self._icloud.get(event.src_path, None)
 
         if parent is None or cfi is None:
             # Create parent folders as needed
@@ -689,6 +690,7 @@ class EventHandler(RegexMatchingEventHandler):
         """
         Ignore directory modified events as they do not affect iCloud Drive.
         """
+        raise RuntimeError(f"unexpected event {_event} received")
 
     def _handle_folder_moved(self, event: ICDSFolderMovedEvent) -> None:
         """
@@ -709,7 +711,7 @@ class EventHandler(RegexMatchingEventHandler):
         self._pending_futures.add(
             self._unlimited_threadpool.submit(
                 self._icloud.process_folder,
-                root=self._icloud.root,
+                root=True,
                 path=event.src_path,
                 ignore=True,
                 recursive=False,
@@ -734,51 +736,64 @@ class EventHandler(RegexMatchingEventHandler):
                 (ICDSFileDeletedEvent,
                 ICDSFolderDeletedEvent)) for e in evs
                 ):
-                final = next(
-                    e for e in reversed(evs)
-                    if isinstance(e.event,
-                                  (ICDSFileDeletedEvent,
-                                   ICDSFolderDeletedEvent)))
+                try:
+                    final = next(
+                        e for e in reversed(evs)
+                        if isinstance(e.event,
+                                    (ICDSFileDeletedEvent,
+                                    ICDSFolderDeletedEvent)))
+                except StopIteration:
+                    pass
             # Moving overrides everything, also
-            if any(isinstance(e.event,
+            elif any(isinstance(e.event,
                 (ICDSFileMovedEvent,
                  ICDSFolderMovedEvent)) for e in evs
                 ):
-                final = next(
-                    e for e in reversed(evs)
-                    if isinstance(e.event,
-                                  (ICDSFileMovedEvent,
-                                   ICDSFolderModifiedEvent)))
+                try:
+                    final = next(
+                        e for e in reversed(evs)
+                        if isinstance(e.event,
+                                    (ICDSFileMovedEvent,
+                                    ICDSFolderModifiedEvent)))
+                except StopIteration:
+                    pass
             # Created + modified → created
             elif isinstance(evs[0].event,
                             (ICDSFileCreatedEvent,
                              ICDSFolderCreatedEvent)):
                 final = evs[0]
-            coalesced.append(final)
+            if final is None:
+                pass
+            if final:
+                coalesced.append(final)
 
-        coalesced = self._rationalize_dir_moves(coalesced)
+        coalesced = self._conflate_folder_events(coalesced, ICDSFolderDeletedEvent)
+        coalesced = self._conflate_folder_events(coalesced, ICDSFolderMovedEvent)
         coalesced.sort(key=lambda e: e.timestamp)
 
         return coalesced
     # pylint: disable=too-many-branches
-    def _rationalize_dir_moves(self, events: list[QueuedEvent]) -> list[QueuedEvent]:
+    def _conflate_folder_events(self,
+                                events: list[QueuedEvent],
+                                cls: Type[ICDSFolderDeletedEvent | ICDSFolderMovedEvent]
+                                ) -> list[QueuedEvent]:
         """
         Filter redundant events when directory moves occur. Removes nested directory move events
         (subdirectories moved as part of a parent directory move) and file-level events that are
         implicitly covered by a directory move (e.g., files created/deleted/moved within a
         moved directory). This prevents duplicate or conflicting operations on the same paths.
         """
-        dir_moves = [qe for qe in events if isinstance(qe.event, ICDSFolderMovedEvent)]
-        if not dir_moves:
+        folder_evs = [qe for qe in events if isinstance(qe.event, cls)]
+        if not folder_evs:
             return events
 
         filtered: list[QueuedEvent] = []
         for qe in events:
-            # Drop nested ICDSFolderMovedEvent (strict subdirectories only)
-            if isinstance(qe.event, ICDSFolderMovedEvent):
+            # Drop nested ICDSFolderDeletedEvent/ICDSFolderMovedEvent (strict subdirectories only)
+            if isinstance(qe.event, cls):
                 src_path = qe.event.src_path
                 is_nested = False
-                for other_qe in dir_moves:
+                for other_qe in folder_evs:
                     if qe is other_qe:
                         continue
                     other_src = Path(other_qe.event.src_path)
@@ -793,14 +808,14 @@ class EventHandler(RegexMatchingEventHandler):
                 if is_nested:
                     continue
 
-            # Drop file events covered by a ICDSFolderMovedEvent
+            # Drop file events covered by a ICDSFolderDeletedEvent/ICDSFolderMovedEvent
             if isinstance(qe.event,
                           (ICDSFileMovedEvent,
                            ICDSFileCreatedEvent,
                            ICDSFileDeletedEvent)):
                 src = Path(qe.event.src_path)
                 covered = False
-                for dm_qe in dir_moves:
+                for dm_qe in folder_evs:
                     dm_src = dm_qe.event.src_path
                     if src == dm_src:
                         covered = True
@@ -858,6 +873,8 @@ class EventHandler(RegexMatchingEventHandler):
 
     def on_modified(self, event):
         """Handle filesystem modified event callback from watchdog."""
+        if isinstance(event, DirModifiedEvent):
+            return
         self._enqueue(event=self._map_event(event=event),
                             queue=self._event_queue)
 
@@ -880,6 +897,6 @@ class EventHandler(RegexMatchingEventHandler):
                     self.ctx.log_path.joinpath("icloudds_"+name+filename),
                     'w',
                     encoding="utf-8") as f:
-                    sorted_dict = dict(sorted(tree.root.items()))
+                    sorted_dict = dict(sorted(tree.items()))
                     for k, v in sorted_dict.items():
                         f.write(f"{k}: {v!r}\n")
