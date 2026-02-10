@@ -476,7 +476,7 @@ class ICloudTree(BaseTree):
         try:
             # it is possible that self._root or self._trash is empty but
             # don't want to lock as trash_has_changed() is a lengthy operation
-            if self.root_has_changed() or self.trash_has_changed():
+            if self._root_has_changed() or self._trash_has_changed():
                 return True
         except Exception:
             logger.warning("bailing out on is_dirty()")
