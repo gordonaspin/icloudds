@@ -118,6 +118,27 @@ class BaseTree():
         """pops an item from root and returns it"""
         return self._root.pop(path)
 
+    def prune(self, path: Path, inclusive:bool=True) -> None:
+        """prunes all sub-paths from tree, and path if inclusive"""
+        for k in self.keys():
+            p: Path = Path(k)
+            if p.is_relative_to(path):
+                if not inclusive and p == path:
+                    continue
+                with self._root as root:
+                    if k in root:
+                        root.pop(k)
+
+    def re_key(self, old_path: Path, new_path: Path):
+        """re-keys old_path to new_path including children"""
+        for k in list(self.keys()):
+            p: Path = Path(k)
+            if p.is_relative_to(old_path):
+                new_key = k.replace(str(old_path), str(new_path))
+                with self._root as root:
+                    if k in root:
+                        self._root[new_key] = self._root.pop(k)
+
     def ignore(self, path: Path | str) -> bool:
         """
         Determine whether a file or folder should be ignored based on include/exclude patterns.

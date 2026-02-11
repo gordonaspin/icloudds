@@ -80,12 +80,12 @@ class LocalTree(BaseTree):
     @override
     def refresh(self) -> None:
         """Refresh the local file system tree by scanning the root directory."""
-        logger.debug("Refreshing Local Drive %s...", self._root_path)
+        logger.debug("refreshing Local Drive %s...", self._root_path)
         self._root.clear()
         self._root[BaseTree.ROOT_FOLDER_NAME] = LocalFolderInfo(
             BaseTree.ROOT_FOLDER_NAME)
         self._add_children(self._root_path)
-        logger.debug("Refresh local complete root has %d items, %d folders, %d files",
+        logger.debug("refresh local complete root has %d items, %d folders, %d files",
                      len(self._root),
                      sum(1 for _ in self.folders(self._root)),
                      sum(1 for _ in self.files(self._root)))
@@ -120,16 +120,17 @@ class LocalTree(BaseTree):
                 for entry in entries:
                     path = Path(entry.path).relative_to(self._root_path)
                     stat_entry = entry.stat()
-                    if entry.is_file(follow_symlinks=True):
+                    if entry.is_dir(follow_symlinks=True):
                         if self.ignore(path):
                             continue
-                        logger.debug("Local file %s", path)
-                        self.add(path=path, _obj=LocalFileInfo(
-                            name=entry.name, stat_entry=stat_entry))
-                    elif entry.is_dir(follow_symlinks=True):
-                        if self.ignore(path):
-                            continue
+                        logger.debug("local folder %s", path)
                         self.add(path=path, _obj=LocalFolderInfo(name=entry.name))
                         self._add_children(entry.path)
+                    elif entry.is_file(follow_symlinks=True):
+                        if self.ignore(path):
+                            continue
+                        self.add(path=path, _obj=LocalFileInfo(
+                            name=entry.name, stat_entry=stat_entry))
+ 
         except PermissionError:
             pass  # Skip unreadable directories

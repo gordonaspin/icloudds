@@ -130,10 +130,10 @@ def main(directory: str,
     if password is not None:
         KeywordFilter.add_keyword(password)
     if directory is None:
-        logger.error("Local directory is required")
+        logger.error("local directory is required")
         sys.exit(constants.ExitCode.EXIT_FAILED_MISSING_COMMAND.value)
     if not Path.is_dir(directory):
-        logger.error("Local directory %s does not exist or is not a directory", directory)
+        logger.error("local directory %s does not exist or is not a directory", directory)
         sys.exit(constants.ExitCode.EXIT_FAILED_NOT_A_DIRECTORY.value)
     if username is None:
         logger.error("iCloud username is required")
@@ -168,7 +168,7 @@ def main(directory: str,
             event_handler.run()
             observer.join()
         except Exception as e:
-            logger.critical("Exception in main thread: %s %s", e.__class__.__name__, e)
+            logger.critical("exception in main thread: %s %s", e.__class__.__name__, e)
             logger.critical(traceback.format_exc())
         finally:
             lock.release()

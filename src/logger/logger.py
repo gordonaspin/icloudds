@@ -73,7 +73,7 @@ def handle_unhandled_exception(exc_type, exc_value, exc_traceback):
     # Log the exception with the traceback
     # Using logger.exception() is a shortcut that automatically adds exc_info
     logger = logging.getLogger("unhandled")
-    logger.critical("**** Unhandled exception occurred ****",
+    logger.critical("**** unhandled exception occurred ****",
                     exc_info=(exc_type, exc_value, exc_traceback))
 
 def handle_thread_exception(args):
@@ -81,7 +81,7 @@ def handle_thread_exception(args):
     Custom exception hook to handle uncaught exceptions in threads.
     """
     logger = logging.getLogger("unhandled")
-    logger.critical("**** Exception caught in thread: %s ****",
+    logger.critical("**** exception in thread: %s ****",
                     args.thread.name,
                     exc_info=(args.exc_type, args.exc_value, args.exc_traceback))
 
