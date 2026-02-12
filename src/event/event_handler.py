@@ -410,7 +410,7 @@ class EventHandler(RegexMatchingEventHandler):
         file_renames = []
         for docwsid in these_docwsids.keys() & those_docwsids.keys():
             if those.get(those_docwsids[docwsid]).name != these.get(these_docwsids[docwsid]).name:
-                if isinstance(those.get([those_docwsids[docwsid]]), ICloudFolderInfo):
+                if isinstance(those.get(those_docwsids[docwsid]), ICloudFolderInfo):
                     folder_renames.append((docwsid, those_docwsids[docwsid]))
                 else:
                     file_renames.append((docwsid, those_docwsids[docwsid]))
