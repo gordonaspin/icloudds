@@ -26,14 +26,14 @@ class ActionResult:
     args: list | None = None
     exception: Exception | None = None
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.__class__.__name__.lower()}{'' if self.success else ' failed'} {self.path}"
 
 class Nil(ActionResult):
     """
     Represents a no-op action result (no action taken).
     """
-    def __init__(self):
+    def __init__(self) -> Nil:
         super().__init__(success=True, path="")
 
 class Download(ActionResult):

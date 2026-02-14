@@ -7,6 +7,7 @@ ICloudFolderInfo) that handle timestamp conversions and metadata extraction.
 """
 from typing import override
 import os
+from os import stat_result
 import platform
 from dataclasses import dataclass, InitVar
 from datetime import datetime, timezone, timedelta
@@ -53,7 +54,7 @@ class LocalFolderInfo(FolderInfo):
     """
     name: str
     @override
-    def __repr__(self):
+    def __repr__(self) -> str:
         """Return string representation of the local folder."""
         return f"FolderInfo({self.name})"
 
@@ -70,7 +71,7 @@ class LocalFileInfo(FileInfo):
     modified_time: datetime = None
     created_time: datetime = None
 
-    def __post_init__(self, stat_entry):
+    def __post_init__(self, stat_entry: stat_result) -> None:
         """
         Initialize file metadata from os.stat_result, extracting size and timestamps
         with platform-specific rounding.
@@ -92,7 +93,7 @@ class LocalFileInfo(FileInfo):
             )
 
     @override
-    def __repr__(self):
+    def __repr__(self) -> str:
         """Return string representation of the local file with size and modification time."""
         return f"FileInfo({self.name}, size={self.size}, modified={self.modified_time})"
 
@@ -135,7 +136,7 @@ class ICloudFolderInfo(FolderInfo):
         return self.node.data['numberOfItems']
 
     @override
-    def __repr__(self):
+    def __repr__(self) -> str:
         """Return string representation of the iCloud folder."""
         return f"FolderInfo({self.name})"
 
@@ -167,11 +168,6 @@ class ICloudFileInfo(FileInfo):
         """Get the file modification time from iCloud Drive in UTC."""
         return self.node.date_modified.replace(tzinfo=timezone.utc)
 
-    @modified_time.setter
-    def modified_time(self, modified_time) -> None:
-        """Set the file modification time (for internal use)."""
-        self._modified_time = modified_time
-
     @override
     @property
     def created_time(self) -> datetime:
@@ -180,6 +176,6 @@ class ICloudFileInfo(FileInfo):
             ).replace(tzinfo=timezone.utc)
 
     @override
-    def __repr__(self):
+    def __repr__(self) -> str:
         """Return string representation of the iCloud file with size and modification time."""
         return f"FileInfo({self.name}, size={self.size}, modified={self.modified_time})"

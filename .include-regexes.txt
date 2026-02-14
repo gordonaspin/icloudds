@@ -1,2 +1,4 @@
 # regexes to include, one per line.
 # if this include file is not specified or is empty, everything is included
+[^/]+$
+Test

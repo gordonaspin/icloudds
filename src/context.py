@@ -14,10 +14,8 @@ class Context:
     username: str
     password: str
     cookie_directory: str
-    ignore_local: list[str]
-    ignore_icloud: list[str]
-    include_local: list[str]
-    include_icloud: list[str]
+    ignore_regexes: list[str]
+    include_regexes: list[str]
     logging_config: str
     log_path: Path
     icloud_check_period: timedelta

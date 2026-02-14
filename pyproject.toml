@@ -30,6 +30,7 @@ Repository = "https://github.com/gordonaspin/icloudds"
 [tool.pylint]
 # Disable specific messages by their symbolic name or ID.
 disable = [
+    "import-error",
     "no-member",
     "too-many-instance-attributes",
     "too-many-arguments",

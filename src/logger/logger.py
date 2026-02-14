@@ -16,10 +16,13 @@ import atexit
 import datetime as dt
 import json
 import logging
+from logging import Logger, Handler, LogRecord
 import logging.config
 import sys
 import threading
-from typing import override
+from typing import Any, Type, override
+from types import TracebackType
+
 
 import constants
 
@@ -36,13 +39,13 @@ def setup_logging(logging_config: Path) -> Path:
     """
     try:
         with open(logging_config, encoding="utf-8") as f_in:
-            config = json.load(f_in)
+            config: dict[str, Any] = json.load(f_in)
     except FileNotFoundError:
         print(f"Logging config file {logging_config} not found")
         sys.exit(constants.ExitCode.EXIT_FAILED_CLICK_USAGE.value)
 
     logging.config.dictConfig(config)
-    queue_handler = logging.getHandlerByName("queue_handler")
+    queue_handler: Handler = logging.getHandlerByName("queue_handler")
     if queue_handler is not None:
         queue_handler.listener.start()
         atexit.register(queue_handler.listener.stop)
@@ -52,7 +55,7 @@ def setup_logging(logging_config: Path) -> Path:
     logging.getLogger().info("logging configured")
 
     for _, handler in config['handlers'].items():
-        file = handler.get('filename', None)
+        file: str = handler.get('filename', None)
         if file:
             folder_path = Path(file).parent
             folder_path.mkdir(parents=True, exist_ok=True)
@@ -60,7 +63,9 @@ def setup_logging(logging_config: Path) -> Path:
 
     return None
 
-def handle_unhandled_exception(exc_type, exc_value, exc_traceback):
+def handle_unhandled_exception(exc_type: Type[BaseException],
+                               exc_value: BaseException,
+                               exc_traceback: TracebackType) -> None:
     """
     Handler for unhandled exceptions that will write to the logs.
     """
@@ -72,20 +77,20 @@ def handle_unhandled_exception(exc_type, exc_value, exc_traceback):
 
     # Log the exception with the traceback
     # Using logger.exception() is a shortcut that automatically adds exc_info
-    logger = logging.getLogger("unhandled")
+    logger: Logger = logging.getLogger("unhandled")
     logger.critical("**** unhandled exception occurred ****",
                     exc_info=(exc_type, exc_value, exc_traceback))
 
-def handle_thread_exception(args):
+def handle_thread_exception(args: Any) -> None:
     """
     Custom exception hook to handle uncaught exceptions in threads.
     """
-    logger = logging.getLogger("unhandled")
+    logger: Logger = logging.getLogger("unhandled")
     logger.critical("**** exception in thread: %s ****",
                     args.thread.name,
                     exc_info=(args.exc_type, args.exc_value, args.exc_traceback))
 
-LOG_RECORD_BUILTIN_ATTRS = {
+LOG_RECORD_BUILTIN_ATTRS: list[str] = {
     "args",
     "asctime",
     "created",
@@ -121,10 +126,9 @@ class MyJSONFormatter(logging.Formatter):
     def __init__(
         self,
         *,
-        fmt_keys: dict[str, str] | None = None,
-    ):
+        fmt_keys: dict[str, str] | None = None) -> MyJSONFormatter:
         super().__init__()
-        self.fmt_keys = fmt_keys if fmt_keys is not None else {}
+        self.fmt_keys: dict[str, str] = fmt_keys if fmt_keys is not None else {}
 
     @override
     def format(self, record: logging.LogRecord) -> str:
@@ -133,16 +137,16 @@ class MyJSONFormatter(logging.Formatter):
         This builds a dictionary representation via `_prepare_log_dict` and
         serializes it to JSON.
         """
-        message = self._prepare_log_dict(record)
+        message: dict[str, str | Any] = self._prepare_log_dict(record)
         return json.dumps(message, default=str)
 
-    def _prepare_log_dict(self, record: logging.LogRecord):
+    def _prepare_log_dict(self, record: logging.LogRecord) -> dict[str, str | Any]:
         """Prepare a dictionary from a LogRecord suitable for JSON serialization.
 
         Extracts configured fields, timestamps, exception and stack traces,
         and any extra attributes attached to the LogRecord.
         """
-        always_fields = {
+        always_fields: dict[str, str] = {
             "message": record.getMessage(),
             "timestamp": dt.datetime.fromtimestamp(
                 record.created, tz=dt.timezone.utc
@@ -154,7 +158,7 @@ class MyJSONFormatter(logging.Formatter):
         if record.stack_info is not None:
             always_fields["stack_info"] = self.formatStack(record.stack_info)
 
-        message = {
+        message: dict[str, str | Any] = {
             key: msg_val
             if (msg_val := always_fields.pop(val, None)) is not None
             else getattr(record, val)
@@ -185,17 +189,17 @@ class KeywordFilter(logging.Filter):
     asterisks of the same length when present in a log message.
     """
     _keywords = []
-    def __init__(self, name="KeywordFilter"):
+    def __init__(self, name: str="KeywordFilter") -> KeywordFilter:
         """Initialize the filter with an optional name (passed to base class)."""
         super().__init__(name)
 
     @override
-    def filter(self, record) -> bool | logging.LogRecord:
+    def filter(self, record: LogRecord) -> bool | logging.LogRecord:
         """Mask any configured keywords in the record's message and allow it.
 
         Always returns True to let the record pass through after masking.
         """
-        message = record.getMessage()
+        message: str = record.getMessage()
         for keyword in self._keywords:
             if keyword in message:
                 record.msg = message.replace(keyword, "*" * len(keyword))

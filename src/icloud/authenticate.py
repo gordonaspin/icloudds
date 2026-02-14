@@ -1,10 +1,12 @@
 """Handles username/password authentication and two-step authentication"""
 import sys
 import logging
+from logging import Logger
+from typing import Any
 
 import click
 
-import pyicloud
+from pyicloud import PyiCloudService
 from pyicloud import utils
 from pyicloud.exceptions import (
     PyiCloud2SARequiredException,
@@ -13,9 +15,9 @@ from pyicloud.exceptions import (
 
 import constants
 
-logger = logging.getLogger(__name__)
+logger: Logger = logging.getLogger(__name__)
 
-def _handle_2fa(api):
+def _handle_2fa(api: PyiCloudService) -> None:
     # fmt: off
     print("\nTwo-factor (2FA) authentication required.")
     # fmt: on
@@ -24,13 +26,13 @@ def _handle_2fa(api):
         logger.debug("Failed to verify (2FA) verification code")
         sys.exit(constants.ExitCode.EXIT_FAILED_VERIFY_2FA_CODE.value)
 
-def _handle_2sa(api):
+def _handle_2sa(api: PyiCloudService) -> None:
     # fmt: off
     print("\nTwo-step (2SA) authentication required.")
     # fmt: on
     print("\nYour trusted devices are:")
-    devices = api.trusted_devices
-    device = None
+    devices: list[dict[str, Any]] = api.trusted_devices
+    device: Any = None
     while device is None:
         for i, device in enumerate(devices):
             phone = device.get("phoneNumber")
@@ -55,22 +57,22 @@ def _handle_2sa(api):
 
 
 def authenticate(
-    username,
-    password,
-    cookie_directory=None,
-    raise_authorization_exception=False,
-    client_id=None,
-    unverified_https=False
-):
+    username: str,
+    password: str,
+    cookie_directory: str = None,
+    raise_authorization_exception: bool = False,
+    client_id: str = None,
+    unverified_https: bool=False
+) -> PyiCloudService:
     """Authenticate with iCloud username and password"""
     logger.debug("Authenticating...")
     failure_count = 0
 
     while True:
         try:
-            api = pyicloud.PyiCloudService(
-                username,
-                password,
+            api: PyiCloudService = PyiCloudService(
+                apple_id=username,
+                password=password,
                 cookie_directory=cookie_directory,
                 client_id=client_id,
                 verify=not unverified_https)

@@ -7,15 +7,16 @@ and maintaining a trash/recycle bin for deleted items.
 """
 from pathlib import Path
 import logging
+from logging import Logger
 import re
 from collections.abc import Iterator
 from typing import Any, Tuple
 
-from model.file_info import BaseInfo, FileInfo, FolderInfo
-# pylint: disable=no-name-in-module
+from context import Context
+from model.file_info import FileInfo, FolderInfo
 from model.thread_safe import ThreadSafePathDict
 
-logger = logging.getLogger(__name__)
+logger: Logger = logging.getLogger(__name__)
 
 
 class BaseTree():
@@ -26,9 +27,10 @@ class BaseTree():
     active content and a trash section for deleted items. This is intended to be subclassed
     by concrete implementations like LocalTree and ICloudTree.
     """
-    ROOT_FOLDER_NAME = "."
+    ROOT_FOLDER_NAME: str = "."
 
-    def __init__(self, root_path: Path, ignores: list[str] = None, includes: list[str] = None):
+    def __init__(self,
+                 ctx: Context) -> BaseTree:
         """
         Initialize a BaseTree instance.
 
@@ -39,20 +41,20 @@ class BaseTree():
         """
         self._root: ThreadSafePathDict = ThreadSafePathDict()
         self._trash: ThreadSafePathDict = ThreadSafePathDict()
-        self._root_path: Path = root_path
-        self._ignores_patterns: list[str] = [
+        self._root_path: Path = ctx.directory
+        builtin_ignore_regexes: list[str] = [
             r'.*\.com-apple-bird.*',
             r'.*\.DS_Store'
         ]
-        self._includes_patterns: list[str] = []
+        include_patterns: list[str] = []
 
-        self._ignores_patterns.extend(ignores or [])
-        self._ignores_regexes: list[re.Pattern] = [
-            re.compile(pattern) for pattern in self._ignores_patterns]
+        builtin_ignore_regexes.extend(ctx.ignore_regexes or [])
+        self._ignore_regexes: list[re.Pattern] = [
+            re.compile(pattern) for pattern in builtin_ignore_regexes]
 
-        self._includes_patterns.extend(includes or [])
+        include_patterns.extend(ctx.include_regexes or [])
         self._includes_regexes: list[re.Pattern] = [
-            re.compile(pattern) for pattern in self._includes_patterns]
+            re.compile(pattern) for pattern in include_patterns]
 
     def keys(self, root:bool=True):
         """returns keys in root or trash"""
@@ -67,12 +69,12 @@ class BaseTree():
     @property
     def ignores_patterns(self) -> list[str]:
         """Get the list of regex patterns for files/folders to ignore."""
-        return self._ignores_patterns
+        return self._builtin_ignore_regexes
 
     @property
     def ignores_regexes(self) -> list[re.Pattern]:
         """Get the compiled regex patterns for files/folders to ignore."""
-        return self._ignores_regexes
+        return self._ignore_regexes
 
     @property
     def includes_patterns(self) -> list[str]:
@@ -109,12 +111,12 @@ class BaseTree():
         """
         raise NotImplementedError("Subclasses should implement this method")
 
-    def get(self, key, default=None, root: bool=True):
+    def get(self, key, default=None, root: bool=True) -> FileInfo | FolderInfo:
         """gets item from root by default, else trash"""
         target = self._root if root else self._trash
         return target.get(key, default)
 
-    def pop(self, path: Path)-> FileInfo | FolderInfo:
+    def pop(self, path: Path) -> FileInfo | FolderInfo:
         """pops an item from root and returns it"""
         return self._root.pop(path)
 
@@ -129,7 +131,7 @@ class BaseTree():
                     if k in root:
                         root.pop(k)
 
-    def re_key(self, old_path: Path, new_path: Path):
+    def re_key(self, old_path: Path, new_path: Path) -> None:
         """re-keys old_path to new_path including children"""
         for k in list(self.keys()):
             p: Path = Path(k)
@@ -158,7 +160,7 @@ class BaseTree():
         if isinstance(path, Path):
             path = str(path)
 
-        for regex in self._ignores_regexes:
+        for regex in self._ignore_regexes:
             if re.match(regex, path):
                 return True
 
@@ -171,20 +173,22 @@ class BaseTree():
 
         return True
 
-    def files(self, root) -> Iterator[tuple[Path, BaseInfo]]:
+    def files(self, root: bool=True) -> Iterator[Path]:
         """
         Breadth-first iteration over all files.
         Yields: (pathname, name, item)
         """
+        root = self._root if root else self._trash
         for path, cfi in root.items():
             if isinstance(cfi, FileInfo):
-                yield path, cfi
+                yield path
 
-    def folders(self, root) -> Iterator[tuple[Path, BaseInfo]]:
+    def folders(self, root: bool=True) -> Iterator[Path]:
         """
         Breadth-first iteration over all folders.
         Yields: (pathname, name, item)
         """
+        root = self._root if root else self._trash
         for path, cfi in root.items():
             if isinstance(cfi, FolderInfo):
-                yield path, cfi
+                yield path

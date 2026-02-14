@@ -15,17 +15,17 @@ from pathlib import Path
 import click
 from click import version_option
 from watchdog.observers import Observer
-import timeloop
+from timeloop import Timeloop
 from fasteners import InterProcessLock
 
 import constants
 from context import Context
 from event.event_handler import EventHandler
-from logger.logger import setup_logging, KeywordFilter
+from logger.logger import setup_logging, KeywordFilter, Logger
 
-NAME = "icloudds"
-logger = logging.getLogger(NAME)
-tl = timeloop.Timeloop()
+NAME: str = "icloudds"
+logger: Logger = logging.getLogger(NAME)
+timeloop: Timeloop = Timeloop()
 
 def load_regexes(name: str) -> list[str]:
     """
@@ -34,9 +34,10 @@ def load_regexes(name: str) -> list[str]:
     if not Path.is_file(name):
         return []
     with open(file=name, encoding="utf-8") as f:
-        return [line.strip() for line in f.readlines() if not line.startswith("#")]
+        lines = f.readlines()
+        return [line.strip() for line in lines if not line.startswith("#")]
 
-CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"], "max_content_width": 120}
+CONTEXT_SETTINGS: dict = {"help_option_names": ["-h", "--help"], "max_content_width": 120}
 @click.command(context_settings=CONTEXT_SETTINGS, options_metavar="<options>", no_args_is_help=True)
 @click.option("-d", "--directory",
               help="Local directory that should be used for download",
@@ -53,29 +54,17 @@ CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"], "max_content_width": 
               metavar="<directory>",
               default="~/.pyicloud",
               show_default=True)
-@click.option("--ignore-icloud",
-              help="Ignore iCloud Drive regular expressions",
+@click.option("--ignore-regexes",
+              help="Ignore regular expressions",
               type=click.Path(exists=False),
               metavar="<filename>",
-              default=".ignore-icloud.txt",
+              default=".ignore-regexes.txt",
               show_default=True)
-@click.option("--ignore-local",
-              help="Ignore Local regular expressions",
+@click.option("--include-regexes",
+              help="Include regular expressions",
               type=click.Path(exists=False),
               metavar="<filename>",
-              default=".ignore-local.txt",
-              show_default=True)
-@click.option("--include-icloud",
-              help="Include iCloud Drive regular expressions",
-              type=click.Path(exists=False),
-              metavar="<filename>",
-              default=".include-icloud.txt",
-              show_default=True)
-@click.option("--include-local",
-              help="Include Local fregular expressions",
-              type=click.Path(exists=False),
-              metavar="<filename>",
-              default=".include-local.txt",
+              default=".include-regexes.txt",
               show_default=True)
 @click.option("--logging-config",
               help="JSON logging config filename (default: logging-config.json)",
@@ -112,16 +101,14 @@ def main(directory: str,
          username: str,
          password: str,
          cookie_directory: str,
-         ignore_icloud: str,
-         ignore_local: str,
-         include_icloud: str,
-         include_local: str,
+         ignore_regexes: str,
+         include_regexes: str,
          logging_config: str,
          icloud_check_period: int,
          icloud_refresh_period: int,
          debounce_period: int,
          max_workers: int
-         ):
+         ) -> int:
     """
     main
     """
@@ -149,18 +136,20 @@ def main(directory: str,
                             username=username,
                             password=password,
                             cookie_directory=cookie_directory,
-                            ignore_local=load_regexes(ignore_local),
-                            ignore_icloud=load_regexes(ignore_icloud),
-                            include_local=load_regexes(include_local),
-                            include_icloud=load_regexes(include_icloud),
+                            ignore_regexes=load_regexes(ignore_regexes),
+                            include_regexes=load_regexes(include_regexes),
                             logging_config=logging_config,
                             log_path=log_path,
                             icloud_check_period=timedelta(seconds=icloud_check_period),
                             icloud_refresh_period=timedelta(seconds=icloud_refresh_period),
                             debounce_period=timedelta(seconds=debounce_period),
                             max_workers=max_workers,
-                            timeloop=tl)
+                            timeloop=timeloop)
 
+            for p in context.ignore_regexes:
+                logger.info("ignore %s", p)
+            for p in context.include_regexes:
+                logger.info("include %s", p)
             event_handler = EventHandler(ctx=context)
             observer = Observer()
             observer.schedule(event_handler, path=directory, recursive=True)
@@ -178,6 +167,8 @@ def main(directory: str,
     else:
         print(f"Another instance of icloudds is running. Check for {lock_file} file")
         sys.exit(constants.ExitCode.EXIT_FAILED_ALREADY_RUNNING.value)
+
+    return constants.ExitCode.EXIT_NORMAL.value
 
 if __name__ == "__main__":
     main()

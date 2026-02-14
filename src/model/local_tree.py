@@ -5,7 +5,7 @@ Provides a tree representation of the local file system. LocalTree extends BaseT
 to scan and manage the hierarchy of files and folders stored on the local disk,
 with support for ignore/include filtering rules.
 """
-from os import scandir
+from os import scandir, stat_result
 from pathlib import Path
 import logging
 from typing import override
@@ -72,10 +72,9 @@ class LocalTree(BaseTree):
     - Allows tree population to continue even if some directories cannot be accessed
     """
 
-    def __init__(self, ctx: Context):
-        self.ctx = ctx
-        super().__init__(root_path=ctx.directory, ignores=self.ctx.ignore_local,
-                         includes=self.ctx.include_icloud)
+    def __init__(self, ctx: Context) -> LocalTree:
+        self.ctx: Context = ctx
+        super().__init__(ctx)
 
     @override
     def refresh(self) -> None:
@@ -91,29 +90,35 @@ class LocalTree(BaseTree):
                      sum(1 for _ in self.files(self._root)))
 
     @override
-    def add(self, path: Path, _obj=None, _root:dict=None) -> LocalFileInfo | LocalFolderInfo:
+    def add(self,
+            path: Path,
+            _obj: LocalFolderInfo | LocalFileInfo=None,
+            _root:dict=None) -> LocalFileInfo | LocalFolderInfo:
         """Add a file or folder at the given path to the local tree structure."""
+
+        root = self._root if _root is None else _root
+
         for parent in path.parents:
             if parent.name and parent not in self._root:
-                self._root[parent] = LocalFolderInfo(name=parent.name)
+                root[parent] = LocalFolderInfo(name=parent.name)
 
         if _obj is not None:
-            self._root[path] = _obj
+            root[path] = _obj
         else:
             if self._root_path.joinpath(path).is_file():
                 # add file entry
-                stat_entry = self._root_path.joinpath(path).stat()
-                self._root[path] = LocalFileInfo(
+                stat_entry: stat_result = self._root_path.joinpath(path).stat()
+                root[path] = LocalFileInfo(
                     name=path.name, stat_entry=stat_entry)
             elif self._root_path.joinpath(path).is_dir():
                 # add folder entry
-                self._root[path] = LocalFolderInfo(path.name)
+                root[path] = LocalFolderInfo(path.name)
             elif path in self._root:
                 # path is neither file nor folder, remove if in _root
-                self._root.pop(path)
-        return self._root.get(path, None)
+                root.pop(path)
+        return root.get(path, None)
 
-    def _add_children(self, path: Path):
+    def _add_children(self, path: Path) -> None:
         """Populate files and subfolders for a single folder."""
         try:
             with scandir(path) as entries:
@@ -122,15 +127,18 @@ class LocalTree(BaseTree):
                     stat_entry = entry.stat()
                     if entry.is_dir(follow_symlinks=True):
                         if self.ignore(path):
+                            logger.debug("local ignore folder %s", path)
                             continue
-                        logger.debug("local folder %s", path)
+                        logger.debug("local add folder %s", path)
                         self.add(path=path, _obj=LocalFolderInfo(name=entry.name))
                         self._add_children(entry.path)
                     elif entry.is_file(follow_symlinks=True):
                         if self.ignore(path):
+                            logger.debug("local ignore file %s", path)
                             continue
+                        logger.debug("local add folder %s", path)
                         self.add(path=path, _obj=LocalFileInfo(
                             name=entry.name, stat_entry=stat_entry))
- 
+
         except PermissionError:
             pass  # Skip unreadable directories

@@ -24,7 +24,7 @@
   "handlers": {
     "stderr": {
       "class": "logging.StreamHandler",
-      "level": "INFO",
+      "level": "DEBUG",
       "formatter": "production",
       "stream": "ext://sys.stderr",
       "filters": ["KeywordFilter"]
