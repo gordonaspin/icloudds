@@ -1,4 +1,6 @@
 # regexes to include, one per line.
 # if this include file is not specified or is empty, everything is included
-[^/]+$
-Test
+# This regex includes all items in the (relative root folder)
+# [^/]+$
+# this regex includes all items in Test and below
+# Test
