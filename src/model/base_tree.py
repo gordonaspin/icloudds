@@ -158,14 +158,14 @@ class BaseTree():
             True if the item should be ignored, False otherwise.
         """
         for regex in self._ignore_regexes:
-            if re.match(regex, str(path)):
+            if re.match(regex, path.as_posix()):
                 return True
 
         if not self._includes_regexes:
             return False
 
         for regex in self._includes_regexes:
-            if re.match(regex, str(path)):
+            if re.match(regex, path.as_posix()):
                 return False
 
         return True
