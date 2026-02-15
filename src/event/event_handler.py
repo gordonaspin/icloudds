@@ -14,7 +14,7 @@ from datetime import datetime
 from queue import Queue, Empty
 from concurrent.futures import ThreadPoolExecutor, Future, as_completed
 
-from watchdog.events import RegexMatchingEventHandler
+from watchdog.events import FileSystemEventHandler
 from watchdog.events import (
     FileSystemEvent,
     FileCreatedEvent,
@@ -65,7 +65,7 @@ from event.icloud_event import QueuedEvent
 
 logger: Logger = logging.getLogger(__name__)
 
-class EventHandler(RegexMatchingEventHandler):
+class EventHandler(FileSystemEventHandler):
     """
         The EventHandler operates as a bi-directional sync engine with the following key components:
 
@@ -122,21 +122,14 @@ class EventHandler(RegexMatchingEventHandler):
 
     def __init__(self, ctx: Context) -> EventHandler:
         """Initialize the EventHandler with a Context object."""
+        # Don't use RegexMatchingEventHandler, it's use of strings for paths make using
+        # regexes difficult to manage across platforms. Just use the base
+        # FileSystemEventHandler and we can discard events with more flexibility
+        super().__init__()
         self.ctx: Context = ctx
         self._local: LocalTree = LocalTree(ctx=ctx)
         self._icloud: ICloudTree = ICloudTree(ctx=ctx)
         self._refresh: ICloudTree = None
-
-        if self.ctx.include_regexes:
-            includes = ["^" + str(self.ctx.directory.as_posix()) + '/' + p for p in self.ctx.include_regexes]
-        else:
-            includes = None
-        if self.ctx.ignore_regexes:
-            ignores = ["^" + str(self.ctx.directory.as_posix()) + '/' + p for p in self.ctx.ignore_regexes]
-        else:
-            ignores = None
-        super().__init__(regexes=includes, ignore_regexes=ignores,
-                         ignore_directories=False, case_sensitive=False)
         self._icloud_dirty: bool = False
         self._refresh_lock: Lock = Lock()
         self._timeloop: Timeloop = ctx.timeloop
@@ -864,21 +857,21 @@ class EventHandler(RegexMatchingEventHandler):
         """
         Enqueue a filesystem event for processing unless it is suppressed or should be ignored.
         """
-        logger.debug("%s enqueueing: %s", name, event)
         # Drop events that are in our suppressed path list
         if event.src_path in self._suppressed_paths:
-            logger.debug("%s suppressed event %s", name, event.src_path)
+            logger.debug("%s not enqueuing event (path suppressed): %s", name, event.src_path)
             return
         # We don't care about these events
         if self._local.ignore(event.src_path) or self._icloud.ignore(event.src_path):
-            logger.debug("%s ignored event by source %s", name, event.src_path)
+            logger.debug("%s not enqueuing event (ignored src_path): %s", name, event.src_path)
             return
         # We don't care about things moving our of our universe
         if event.dest_path:
             if (self._local.ignore(event.dest_path)
                 or self._icloud.ignore(event.dest_path)):
-                logger.debug("%s ignored event by destination %s", name, event.dest_path)
+                logger.debug("%s not enqueuing event (ignored dest_path): %s", name, event.dest_path)
                 return
+        logger.debug("%s enqueueing: %s", name, event)
         qe: QueuedEvent = QueuedEvent(
             timestamp=time(),
             event=event)
