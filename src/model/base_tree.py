@@ -67,19 +67,9 @@ class BaseTree():
         return root.items()
 
     @property
-    def ignores_patterns(self) -> list[str]:
-        """Get the list of regex patterns for files/folders to ignore."""
-        return self._builtin_ignore_regexes
-
-    @property
     def ignores_regexes(self) -> list[re.Pattern]:
         """Get the compiled regex patterns for files/folders to ignore."""
         return self._ignore_regexes
-
-    @property
-    def includes_patterns(self) -> list[str]:
-        """Get the list of regex patterns for files/folders to explicitly include."""
-        return self._includes_patterns
 
     @property
     def includes_regexes(self) -> list[str]:
