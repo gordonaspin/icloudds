@@ -27,7 +27,7 @@ class BaseTree():
     active content and a trash section for deleted items. This is intended to be subclassed
     by concrete implementations like LocalTree and ICloudTree.
     """
-    ROOT_FOLDER_NAME: str = "."
+    ROOT_FOLDER_NAME: Path = Path(".")
 
     def __init__(self,
                  ctx: Context) -> BaseTree:
@@ -141,7 +141,7 @@ class BaseTree():
                     if k in root:
                         self._root[new_key] = self._root.pop(k)
 
-    def ignore(self, path: Path | str) -> bool:
+    def ignore(self, path: Path) -> bool:
         """
         Determine whether a file or folder should be ignored based on include/exclude patterns.
 
@@ -157,18 +157,15 @@ class BaseTree():
         Returns:
             True if the item should be ignored, False otherwise.
         """
-        if isinstance(path, Path):
-            path = str(path)
-
         for regex in self._ignore_regexes:
-            if re.match(regex, path):
+            if re.match(regex, str(path)):
                 return True
 
         if not self._includes_regexes:
             return False
 
         for regex in self._includes_regexes:
-            if re.match(regex, path):
+            if re.match(regex, str(path)):
                 return False
 
         return True

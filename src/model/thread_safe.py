@@ -21,7 +21,7 @@ class ThreadSafePathDict(UserDict):
         super().__init__(*args, **kwargs)
 
     def _normalize(self, key: Union[str, Path]) -> str:
-        return str(Path(key))
+        return Path(key)
 
     # accessor methods
     def get(self, key, default=None):
@@ -144,10 +144,8 @@ class ThreadSafePathList(UserList):
         super().__init__(*args, **kwargs)
 
     def _normalize(self, value: Any) -> Any:
-        """Helper to ensure paths are stored consistently as strings."""
-        if isinstance(value, (str, Path)):
-            return str(Path(value))
-        return value
+        """Helper to ensure paths are stored consistently as Paths."""
+        return str(Path(value))
 
     # --- Core Indexing Methods ---
     def __getitem__(self, index: Union[int, str, Path, slice]) -> Any:

@@ -146,7 +146,7 @@ class ICloudTree(BaseTree):
                     future = executor.submit(
                         self.process_folder,
                         root=root,
-                        path=Path(BaseTree.ROOT_FOLDER_NAME),
+                        path=BaseTree.ROOT_FOLDER_NAME,
                         recursive=True,
                         ignore=False,
                         executor=executor
@@ -223,7 +223,7 @@ class ICloudTree(BaseTree):
             children = root_or_trash[path].node.get_children(force=True)
 
         for child in children:
-            if path == Path(BaseTree.ROOT_FOLDER_NAME):
+            if path == BaseTree.ROOT_FOLDER_NAME:
                 child_path: Path = Path(child.name)
             else:
                 child_path: Path = path.joinpath(child.name)
@@ -449,7 +449,7 @@ class ICloudTree(BaseTree):
         Returns a MkDir or Nil indicating success or failure."""
         result: ActionResult = None
         try:
-            folder_path = Path(BaseTree.ROOT_FOLDER_NAME)
+            folder_path = BaseTree.ROOT_FOLDER_NAME
             _path: Path = folder_path
             parent_cfi: ICloudFolderInfo = self._root[folder_path]
             parent_node: DriveNode = parent_cfi.node
