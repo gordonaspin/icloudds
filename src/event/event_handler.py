@@ -429,14 +429,14 @@ class EventHandler(RegexMatchingEventHandler):
             self._suppressed_paths.add(Path(old_path))
             self._suppressed_paths.add(Path(new_path))
             try:
-                old_full_path = self._absolute_directory.joinpath(old_path)
-                new_full_path = self._absolute_directory.joinpath(new_path)
+                old_full_path = self.ctx.directory.joinpath(old_path)
+                new_full_path = self.ctx.directory.joinpath(new_path)
                 old_full_path.rename(new_full_path)
                 logger.info("rename %s to %s", old_path, new_path)
             except FileNotFoundError:
                 old_path = new_path.parent.joinpath(old_path.name)
-                old_full_path = self._absolute_directory.joinpath(old_path)
-                new_full_path = self._absolute_directory.joinpath(new_path)
+                old_full_path = self.ctx.directory.joinpath(old_path)
+                new_full_path = self.ctx.directory.joinpath(new_path)
                 old_full_path.rename(new_full_path)
                 logger.info("rename %s to %s", old_path, new_path)
 
@@ -459,9 +459,9 @@ class EventHandler(RegexMatchingEventHandler):
             cfi = those.get(path)
             self._suppressed_paths.add(path)
             if isinstance(cfi, ICloudFolderInfo):
-                if not self._absolute_directory.joinpath(path).exists():
+                if not self.ctx.directory.joinpath(path).exists():
                     logger.debug("%s %s is missing locally, creating folders...", right, path)
-                    self._absolute_directory.joinpath(path).mkdir(parents=True, exist_ok=True)
+                    self.ctx.directory.joinpath(path).mkdir(parents=True, exist_ok=True)
                     folder_created_count += 1
             else:
                 logger.debug("%s %s is missing locally, downloading to Local...", right, path)
@@ -546,7 +546,7 @@ class EventHandler(RegexMatchingEventHandler):
         lfi: LocalFolderInfo | LocalFileInfo = self._local.get(path, None)
         if lfi is not None:
             self._suppressed_paths.add(path)
-            fs_object_path: Path = self._absolute_directory.joinpath(path)
+            fs_object_path: Path = self.ctx.directory.joinpath(path)
             if isinstance(lfi, LocalFolderInfo):
                 logger.info("deleting local folder %s", path)
                 shutil.rmtree(fs_object_path, ignore_errors=True, onexc=None)
