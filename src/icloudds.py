@@ -98,6 +98,7 @@ CONTEXT_SETTINGS: dict = {"help_option_names": ["-h", "--help"], "max_content_wi
               show_default=True)
 @version_option(package_name='icloudds')
 
+# pylint: disable=too-many-branches
 def main(directory: str,
          username: str,
          password: str,
@@ -156,7 +157,7 @@ def main(directory: str,
                 for p in context.include_regexes:
                     logger.info("include %s", p)
             else:
-                logger.info("no include regexes")            
+                logger.info("no include regexes")
             event_handler = EventHandler(ctx=context)
             observer = Observer()
             observer.schedule(event_handler, path=directory, recursive=True)

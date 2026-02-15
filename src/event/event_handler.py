@@ -869,7 +869,9 @@ class EventHandler(FileSystemEventHandler):
         if event.dest_path:
             if (self._local.ignore(event.dest_path)
                 or self._icloud.ignore(event.dest_path)):
-                logger.debug("%s not enqueuing event (ignored dest_path): %s", name, event.dest_path)
+                logger.debug("%s not enqueuing event (ignored dest_path): %s",
+                             name,
+                             event.dest_path)
                 return
         logger.debug("%s enqueueing: %s", name, event)
         qe: QueuedEvent = QueuedEvent(

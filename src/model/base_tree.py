@@ -82,7 +82,7 @@ class BaseTree():
         Subclasses must implement this method with tree-specific logic.
         """
         raise NotImplementedError("Subclasses should implement this method")
-    
+
     def _remove_ignored_items(self) -> None:
         """
         Remove ignored items from both root and trash trees based on ignore/include rules.
