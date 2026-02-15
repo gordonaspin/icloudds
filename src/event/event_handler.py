@@ -128,11 +128,11 @@ class EventHandler(RegexMatchingEventHandler):
         self._refresh: ICloudTree = None
 
         if self.ctx.include_regexes:
-            includes = ["^" + str(self.ctx.directory.as_posix()) + p for p in self.ctx.include_regexes]
+            includes = ["^" + str(self.ctx.directory.as_posix()) + '/' + p for p in self.ctx.include_regexes]
         else:
             includes = None
         if self.ctx.ignore_regexes:
-            ignores = ["^" + str(self.ctx.directory.as_posix()) + p for p in self.ctx.ignore_regexes]
+            ignores = ["^" + str(self.ctx.directory.as_posix()) + '/' + p for p in self.ctx.ignore_regexes]
         else:
             ignores = None
         super().__init__(regexes=includes, ignore_regexes=ignores,

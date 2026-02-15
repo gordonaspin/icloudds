@@ -82,6 +82,26 @@ class BaseTree():
         Subclasses must implement this method with tree-specific logic.
         """
         raise NotImplementedError("Subclasses should implement this method")
+    
+    def _remove_ignored_items(self) -> None:
+        """
+        Remove ignored items from both root and trash trees based on ignore/include rules.
+        """
+        # Two-passes - if the path is to be ignored, pop it to a temp
+        # dictionary, and put it back if it has children that are included
+        d: dict[Path, FolderInfo | FileInfo] = {}
+        for path in list(self._root):
+            if path == BaseTree.ROOT_FOLDER_NAME:
+                continue
+            if self.ignore(path):
+                logger.debug("iCloud Drive ignore %s", path)
+                d[path] = self._root.pop(path)
+        # root has been modified, now put back parents where needed
+        for p, fi in d.items():
+            for path in list(self._root):
+                if path.is_relative_to(p):
+                    self._root[p] = fi
+                    break
 
     def add(self,
             path: Path,

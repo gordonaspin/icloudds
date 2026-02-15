@@ -267,18 +267,6 @@ class ICloudTree(BaseTree):
 
         return futures if len(futures) > 0 else result
 
-    def _remove_ignored_items(self) -> None:
-        """
-        Remove ignored items from both root and trash trees based on ignore/include rules.
-        """
-        for root in [self._root, self._trash]:
-            for path in list(root):
-                if path == BaseTree.ROOT_FOLDER_NAME:
-                    continue
-                if self.ignore(path):
-                    logger.debug("iCloud Drive ignore %s", path)
-                    root.pop(path)
-
     def delete(self, path: Path, lfi: ICloudFileInfo, retry: int=constants.MAX_RETRIES) -> Delete:
         """
         Delete a file or folder from iCloud Drive.
@@ -507,11 +495,17 @@ class ICloudTree(BaseTree):
 
     def _root_count(self) -> int:
         """Return the number of items in the iCloud Drive root folder."""
-        return self._root[BaseTree.ROOT_FOLDER_NAME].file_count
+        with self._root as root:
+            if BaseTree.ROOT_FOLDER_NAME in root:
+                return self._root[BaseTree.ROOT_FOLDER_NAME].file_count
+        return 0
 
     def _trash_count(self) -> int:
         """Return the number of items in the iCloud Drive trash folder."""
-        return self._trash[BaseTree.ROOT_FOLDER_NAME].number_of_items
+        with self._trash as root:
+            if BaseTree.ROOT_FOLDER_NAME in root:
+                return self._trash[BaseTree.ROOT_FOLDER_NAME].number_of_items
+        return 0
 
     def _root_has_changed(self) -> bool:
         """

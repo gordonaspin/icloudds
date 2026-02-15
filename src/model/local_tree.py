@@ -84,6 +84,7 @@ class LocalTree(BaseTree):
         self._root[BaseTree.ROOT_FOLDER_NAME] = LocalFolderInfo(
             BaseTree.ROOT_FOLDER_NAME)
         self._add_children(self._root_path)
+        self._remove_ignored_items()
         logger.debug("refresh local complete root has %d items, %d folders, %d files",
                      len(self._root),
                      sum(1 for _ in self.folders(self._root)),
@@ -128,10 +129,11 @@ class LocalTree(BaseTree):
                     if entry.is_dir(follow_symlinks=True):
                         if self.ignore(path):
                             logger.debug("local ignore folder %s", path)
-                            continue
-                        logger.debug("local add folder %s", path)
-                        self.add(path=path, _obj=LocalFolderInfo(name=entry.name))
-                        self._add_children(entry.path)
+                            self._add_children(entry.path)
+                        else:
+                            logger.debug("local add folder %s", path)
+                            self.add(path=path, _obj=LocalFolderInfo(name=entry.name))
+                            self._add_children(entry.path)
                     elif entry.is_file(follow_symlinks=True):
                         if self.ignore(path):
                             logger.debug("local ignore file %s", path)
