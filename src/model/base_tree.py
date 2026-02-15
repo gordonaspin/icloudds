@@ -23,7 +23,7 @@ class BaseTree():
     """
     Abstract base class for managing a structure of files and folders.
 
-    Provides filtering (ignore/include patterns), iteration methods, and manages both
+    Provides filtering (ignore/include regexes), iteration methods, and manages both
     active content and a trash section for deleted items. This is intended to be subclassed
     by concrete implementations like LocalTree and ICloudTree.
     """
@@ -36,8 +36,8 @@ class BaseTree():
 
         Args:
             root_path: The root path of the tree.
-            ignores: List of regex patterns for files/folders to ignore.
-            includes: List of regex patterns for files/folders to explicitly include.
+            ignores: List of regex regexes for files/folders to ignore.
+            includes: List of regex regexes for files/folders to explicitly include.
         """
         self._root: ThreadSafePathDict = ThreadSafePathDict()
         self._trash: ThreadSafePathDict = ThreadSafePathDict()
@@ -46,15 +46,15 @@ class BaseTree():
             r'.*\.com-apple-bird.*',
             r'.*\.DS_Store'
         ]
-        include_patterns: list[str] = []
+        include_regexes: list[str] = []
 
         builtin_ignore_regexes.extend(ctx.ignore_regexes or [])
         self._ignore_regexes: list[re.Pattern] = [
             re.compile(pattern) for pattern in builtin_ignore_regexes]
 
-        include_patterns.extend(ctx.include_regexes or [])
+        include_regexes.extend(ctx.include_regexes or [])
         self._includes_regexes: list[re.Pattern] = [
-            re.compile(pattern) for pattern in include_patterns]
+            re.compile(pattern) for pattern in include_regexes]
 
     def keys(self, root:bool=True):
         """returns keys in root or trash"""
@@ -68,12 +68,12 @@ class BaseTree():
 
     @property
     def ignores_regexes(self) -> list[re.Pattern]:
-        """Get the compiled regex patterns for files/folders to ignore."""
+        """Get the compiled regex regexes for files/folders to ignore."""
         return self._ignore_regexes
 
     @property
     def includes_regexes(self) -> list[str]:
-        """Get the compiled regex patterns for files/folders to explicitly include."""
+        """Get the compiled regex regexes for files/folders to explicitly include."""
         return self._includes_regexes
 
     def refresh(self) -> None:
@@ -133,12 +133,12 @@ class BaseTree():
 
     def ignore(self, path: Path) -> bool:
         """
-        Determine whether a file or folder should be ignored based on include/exclude patterns.
+        Determine whether a file or folder should be ignored based on include/exclude regexes.
 
         Logic:
-        - If the name matches any ignore pattern, return True (ignore it).
-        - If no include patterns are defined, return False (don't ignore).
-        - If include patterns exist and the name matches one, return False (don't ignore).
+        - If the name matches any ignore regex, return True (ignore it).
+        - If no include regexes are defined, return False (don't ignore).
+        - If include regexes exist and the name matches one, return False (don't ignore).
         - Otherwise, return True (ignore it).
 
         Args:

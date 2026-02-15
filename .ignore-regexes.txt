@@ -1,5 +1,5 @@
-# regex patterns to ignore, one per line
-# built-in ignore patterns are:
+# regexes to ignore, one per line
+# built-in ignore regexes are:
 # .*\.com-apple-bird.*
 # .*\.DS_Store
 .*\.swp

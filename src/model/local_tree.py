@@ -58,8 +58,8 @@ class LocalTree(BaseTree):
 
     6. IGNORE/INCLUDE FILTERING:
     - Applies filtering rules during both refresh and add operations
-    - Skips files and folders that match ignore patterns
-    - Supports include patterns from context configuration
+    - Skips files and folders that match ignore regexes
+    - Supports include regexes from context configuration
     - Filters are applied during tree population, not after
 
     7. SYMBOLIC LINK HANDLING:

@@ -44,6 +44,13 @@ def setup_logging(logging_config: Path) -> Path:
         print(f"Logging config file {logging_config} not found")
         sys.exit(constants.ExitCode.EXIT_FAILED_CLICK_USAGE.value)
 
+    folder_path: Path = Path()
+    for _, handler in config['handlers'].items():
+        file: str = handler.get('filename', None)
+        if file:
+            folder_path = Path(file).parent
+            folder_path.mkdir(parents=True, exist_ok=True)
+
     logging.config.dictConfig(config)
     queue_handler: Handler = logging.getHandlerByName("queue_handler")
     if queue_handler is not None:
@@ -54,14 +61,7 @@ def setup_logging(logging_config: Path) -> Path:
     threading.excepthook = handle_thread_exception
     logging.getLogger().info("logging configured")
 
-    for _, handler in config['handlers'].items():
-        file: str = handler.get('filename', None)
-        if file:
-            folder_path = Path(file).parent
-            folder_path.mkdir(parents=True, exist_ok=True)
-            return folder_path
-
-    return None
+    return folder_path
 
 def handle_unhandled_exception(exc_type: Type[BaseException],
                                exc_value: BaseException,

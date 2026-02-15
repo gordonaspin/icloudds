@@ -46,10 +46,10 @@ Along the way of implementing this and my prior version of iCloud Drive Sync I l
 ## Configurable Items
 `icloudds` can ignore regexes and include regexes.
 ### Ignore Regexes
-`icloudds` can ignore files locally and in iCloud using the --ignore-local and --ignore-icloud options. The --ignore-icloud option allows you to provide a filename of regexes to ignore when found in iCloud. The --ignore-local option similarly allows you to provide a filename of regexes to ignore on the local filesystem. Some ignores are built-in, for example in iCloud .DS_Store files and .com-apple-bird* files are ignored using regexes. Ignore regexes are defined in files, with one regex per line, e.g.:
+`icloudds` can ignore files locally and in iCloud using the --ignore-regexes. Some ignores are built-in, for example in iCloud .DS_Store files and .com-apple-bird* files are ignored using regexes. Ignore regexes are defined in files, with one regex per line, e.g.:
 ```code
-# regex patterns to ignore, one per line
-# built-in ignore patterns are:
+# regexex to ignore, one per line
+# built-in ignore regexes are:
 .*\.com-apple-bird.*
 .*\.DS_Store
 # This regex ignores a specific path
@@ -59,25 +59,25 @@ scripts/iTermHere\.app
 ``` 
 
 ### Include Regexes
-`icloudds` can include regexes listed in files specified on the command line using the --include-local and --include-icloud options., e.g.:
+`icloudds` can include regexes listed in files specified on the command line using the --include-regexes option., e.g.:
 ```code
-# regex patterns to include, one per line
-# built-in ignore patterns are:
+# regexes to include, one per line
+# There are no built-in include regexes
 ThisFolder
 ThatFolder
 ```
-In this example, if used with --include-icloud only paths matching the ThisFolder and ThatFolder will be processed, everything else will be ignored.
+In this example, if used with --include-regexes only paths matching the ThisFolder and ThatFolder will be processed, everything else will be ignored.
 ### How it works in code
-In the snippet below, "name" is a path name to a file relative from the --directory command line option. e.g. "MyFolder/some-file-name.txt". Processing this item will be ignored if it matches with one of the regexes from the ignore specs. If it does not match a regex, the name is compared to see if it starts with any one of the includes folders from the include specs. If the name does not start with any of those patterns, the file / folder is ignored.
+In the snippet below, "name" is a path name to a file relative from the --directory command line option. e.g. "MyFolder/some-file-name.txt". Processing this item will be ignored if it matches with one of the regexes from the ignore specs. If it does not match a regex, the name is compared to see if it starts with any one of the includes folders from the include specs. If the name does not start with any of those regexes, the file / folder is ignored.
 ```python
     def ignore(self, path: str) -> bool:
         """
-        Determine whether a file or folder should be ignored based on include/exclude patterns.
+        Determine whether a file or folder should be ignored based on include/exclude regexes.
 
         Logic:
-        - If the name matches any ignore pattern, return True (ignore it).
-        - If no include patterns are defined, return False (don't ignore).
-        - If include patterns exist and the name matches one, return False (don't ignore).
+        - If the name matches any ignore regex, return True (ignore it).
+        - If no include regexes are defined, return False (don't ignore).
+        - If include regexes exist and the name matches one, return False (don't ignore).
         - Otherwise, return True (ignore it).
 
         Args:
@@ -86,15 +86,15 @@ In the snippet below, "name" is a path name to a file relative from the --direct
         Returns:
             True if the item should be ignored, False otherwise.
         """
-        for regex in self._ignores_regexes:
-            if re.match(regex, path):
+        for regex in self._ignore_regexes:
+            if re.match(regex, path.as_posix()):
                 return True
 
         if not self._includes_regexes:
             return False
 
         for regex in self._includes_regexes:
-            if re.match(regex, path):
+            if re.match(regex, path.as_posix()):
                 return False
 
         return True
@@ -170,10 +170,8 @@ Options:
   -u, --username <username>       Your iCloud username or email address
   -p, --password <password>       Your iCloud password (default: use pyicloud keyring or prompt for password)
   --cookie-directory <directory>  Directory to store cookies for authentication  [default: ~/.pyicloud]
-  --ignore-icloud <filename>      Ignore iCloud Drive regular expressions  [default: .ignore-icloud.txt]
-  --ignore-local <filename>       Ignore Local regular expressions  [default: .ignore-local.txt]
-  --include-icloud <filename>     Include iCloud Drive regular expressions  [default: .include-icloud.txt]
-  --include-local <filename>      Include Local fregular expressions  [default: .include-local.txt]
+  --ignore-regexes <filename>     Ignore regular expressions  [default: .ignore-regexes.txt]
+  --include-regexes <filename>    Include regular expressions  [default: .include-regexes.txt]
   --logging-config <filename>     JSON logging config filename (default: logging-config.json)  [default: logging-
                                   config.json]
   --icloud-check-period <seconds>
