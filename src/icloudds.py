@@ -27,7 +27,7 @@ NAME: str = "icloudds"
 logger: Logger = logging.getLogger(NAME)
 timeloop: Timeloop = Timeloop()
 
-def load_regexes(name: str) -> list[str]:
+def load_regexes(name: str) -> list[str] | None:
     """
     Load regexes from file and return as array of strings
     """
@@ -35,7 +35,8 @@ def load_regexes(name: str) -> list[str]:
         return []
     with open(file=name, encoding="utf-8") as f:
         lines = f.readlines()
-        return [line.strip() for line in lines if not line.startswith("#")]
+        lines = [line.strip() for line in lines if not line.startswith("#")]
+        return lines if lines else None
 
 CONTEXT_SETTINGS: dict = {"help_option_names": ["-h", "--help"], "max_content_width": 120}
 @click.command(context_settings=CONTEXT_SETTINGS, options_metavar="<options>", no_args_is_help=True)
@@ -146,10 +147,16 @@ def main(directory: str,
                             max_workers=max_workers,
                             timeloop=timeloop)
 
-            for p in context.ignore_regexes:
-                logger.info("ignore %s", p)
-            for p in context.include_regexes:
-                logger.info("include %s", p)
+            if context.ignore_regexes:
+                for p in context.ignore_regexes:
+                    logger.info("ignore %s", p)
+            else:
+                logger.info("no ignore regexes")
+            if context.include_regexes:
+                for p in context.include_regexes:
+                    logger.info("include %s", p)
+            else:
+                logger.info("no include regexes")            
             event_handler = EventHandler(ctx=context)
             observer = Observer()
             observer.schedule(event_handler, path=directory, recursive=True)
