@@ -39,12 +39,14 @@ def load_regexes(name: str) -> list[str] | None:
         return lines if lines else None
 
 CONTEXT_SETTINGS: dict = {"help_option_names": ["-h", "--help"], "max_content_width": 120}
-@click.command(context_settings=CONTEXT_SETTINGS, options_metavar="<options>", no_args_is_help=True)
+@click.command(help=NAME, context_settings=CONTEXT_SETTINGS, options_metavar="-d <directory> -u <apple-id> [options]", no_args_is_help=True)
 @click.option("-d", "--directory",
+              required=True,
               help="Local directory that should be used for download",
               type=click.Path(exists=True),
               metavar="<directory>")
 @click.option("-u", "--username",
+              required=True,
               help="Your iCloud username or email address",
               metavar="<username>")
 @click.option("-p", "--password",
@@ -96,7 +98,7 @@ CONTEXT_SETTINGS: dict = {"help_option_names": ["-h", "--help"], "max_content_wi
               metavar="<workers>",
               default=os.cpu_count(),
               show_default=True)
-@version_option(package_name='icloudds')
+@version_option(version=importlib.metadata.version(NAME))
 
 # pylint: disable=too-many-branches
 def main(directory: str,

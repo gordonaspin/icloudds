@@ -27,26 +27,28 @@
 One this initial sync is complete, `icloudds` starts listening for local file system events and takes the action to create, delete, rename and move items in iCloud. Similarly, `icloudds` periodically checks whether the count of items in iCloud Drive has changed. If the count has changed, a fresh copy of the iCloud list is made in the background and compared with the existing iCloud list. This helps detect items that have been created, deleted, moved, renamed etc. and the corresponding changes are made locally and applied to the local list.
 
 ### More detail
-`icloudds` uses the python watchdog filesystem event generator. When a file is created watchdog generates many events so `icloudds` coalesces these events before dispatching to handlers. In addition to this, when `icloudds` needs to download, rename, create files locally it temporarily suppresses event dispatch for those paths. `icloudds` does perform a sanity check on iCloud Drive refreshes. iCloud's model includes a fileCount at the root node and after a refresh `icloudds` checks its count of files/folders with what iCloud reports and if it's different, `icloudds` discards the refresh and will try later.
+`icloudds` uses the python watchdog FileSystemEventHandler event generator. That is to say no filtering by regexes is performed by watchdog. Filtering is solely under the control of `icloudds`. When a file or folder is created, moved, deleted, etc. watchdog generates many events so `icloudds` coalesces these events before dispatching to handlers. In addition to this, when `icloudds` needs to download, rename, create files locally it temporarily suppresses events for those paths. `icloudds` does perform a sanity check on iCloud Drive refreshes. iCloud's model includes a fileCount at the root node and after a refresh `icloudds` checks its count of files/folders with what iCloud reports and if it's different, `icloudds` discards the refresh and will try later.
 
-`icloudds` uses threads managed by the python ThreadPoolExecutor. Traversing the iCloud model can take time as multiple round-trips are required to walk the entire tree. In this respect, starting at the root node, a thread is spawned for each sub-folder to retrieve information about that folder, and again more threads are spawned for each of its subfolfers, and so-on. All these Futures are gathered and waited on until they finish. This is the fastest way to retrieve all the iCloud node information. To protect the integrity of the iCloud file list, `icloudds` uses a ThreadSafeDict (protected with a Lock).
+`icloudds` uses threads managed by the python ThreadPoolExecutor. Traversing the iCloud model can take time as multiple round-trips are required to walk the entire tree. In this respect, starting at the root node, a thread is spawned for each sub-folder to retrieve information about that folder, and again more threads are spawned for each of its subfolfers, and so-on. All these Futures are gathered and waited on until they finish. This is the fastest way to retrieve all the iCloud node information. To protect the integrity of the iCloud file list, `icloudds` uses a ThreadSafeDict (protected with a RLock).
 
 `icloudds` uses a timepool object to register functions that run periodically. These functions run the background iCloud Drive refresh cycle and check whether iCloud Drive root or trash folders have changes, if so a refresh is called immediately.
 
-`icloudds` uploads and downloads files using separate ThreadPoolExecutors. The _limited_threadpool has only one worker as concurrent uploads, deletes and renames to iCloud Drive cause a ZONE_BUSY error with reason 'Conflict'. The _unlimited_threadpool is used to download files and scan the iCloud folder structure in parallel.
+`icloudds` writes and reads ([upload/create, rename, move, delete] and download) files using separate ThreadPoolExecutors. The _limited_threadpool has only one worker as concurrent writes to iCloud Drive can cause a ZONE_BUSY errors with reason 'Conflict'. The _unlimited_threadpool is used to download files and scan the iCloud folder structure in parallel.
 
 ### Odds and Ends
 Along the way of implementing this and my prior version of iCloud Drive Sync I learned a few wierd ways that iCloud works:
 1. iCloud Drive stores file timestamps in UTC, but rounds up timestamps to the nearest second. Annoying.
 2. iCloud Drive has the concept of a "root" folder and a "trash" folder. You would think that moving an item to Trash would decrease the count of items in root and increase the number of items in Trash, right? No. Trash increases, but the count of items in "root" stays the same. So, I guess Trash is in root ? Except it isn't when you retrieve all the items in root. Again, Annoying.
-3. Not surprisingly, there are more types of objects in iCloud Drive beyond files and folders. There are also 'app_library' objects for applications such as GarageBand, TextEdit, Readdle etc. etc. `icloudds` currently ignores these items.
-4. If you've ever inspected a .app on MacOS you know its a package (zip file). When this gets stored in iCloud Drive a .app file gets expanded into a folder and its contents. This is aggravating.
+3. Not surprisingly, there are more types of objects in iCloud Drive beyond files and folders. There are also 'app_library' objects for applications such as GarageBand, TextEdit, Readdle etc. etc. `icloudds` ignores these items.
+4. If you've ever inspected a .app on MacOS you know its a package (like a zip file or tar file). When this gets stored in iCloud Drive a .app file gets expanded into a folder and its contents. This is aggravating.
 5. Concurrent uploads, deletes, renames to iCloud Drive results in ZONE_BUSY errors for 'Conflict' reasons. Shame on Apple for limiting concurrent actions!
 
 ## Configurable Items
-`icloudds` can ignore regexes and include regexes.
+`icloudds` can ignore and include files and folders by regexes. Regexes are treated as relative to the --directory option you specifiy.
+
 ### Ignore Regexes
-`icloudds` can ignore files locally and in iCloud using the --ignore-regexes. Some ignores are built-in, for example in iCloud .DS_Store files and .com-apple-bird* files are ignored using regexes. Ignore regexes are defined in files, with one regex per line, e.g.:
+`icloudds` can ignore files using the --ignore-regexes. Some ignores are built-in, for example in iCloud .DS_Store files and .com-apple-bird* files are ignored using regexes. Ignore regexes are defined in files, with one regex per line, e.g.:
+
 ```code
 # regexex to ignore, one per line
 # built-in ignore regexes are:
@@ -66,9 +68,11 @@ scripts/iTermHere\.app
 ThisFolder
 ThatFolder
 ```
-In this example, if used with --include-regexes only paths matching the ThisFolder and ThatFolder will be processed, everything else will be ignored.
+In this example, if used with --include-regexes only paths (and subfolders) matching the ThisFolder and ThatFolder will be processed, everything else will be ignored.
+
 ### How it works in code
-In the snippet below, "name" is a path name to a file relative from the --directory command line option. e.g. "MyFolder/some-file-name.txt". Processing this item will be ignored if it matches with one of the regexes from the ignore specs. If it does not match a regex, the name is compared to see if it starts with any one of the includes folders from the include specs. If the name does not start with any of those regexes, the file / folder is ignored.
+In the snippet below, "name" is a path name to a file relative from the --directory command line option. e.g. "ThisFolder/some-file-name.txt". Processing this item will be ignored if it matches with one of the regexes from the ignore regexes. If it does not match a regex, the name is matched with the include regexes. If it matches, it is included, else it is ignored.
+
 ```python
     def ignore(self, path: str) -> bool:
         """
@@ -103,7 +107,7 @@ In the snippet below, "name" is a path name to a file relative from the --direct
 `icloudds` uses python logging. The configuration of logging is externalized to a .json file according to the specs of python logging. You can modify this to your needs. I typically run with minimal INFO logging to stderr, and DEBUG logging to the rolling icloudds.log* files.
 
 ### State Logging
-`icloudds` writes to a set of files periodically. These files contain information about the state of the local filesystem and the icloud folders and files. There are 5 files created:
+`icloudds` writes to a set of files after every refresh. These files contain information about the state of the local filesystem and the icloud folders and files. There are 5 files created:
 - icloudds_local_before.log - represents what `icloudds` is tracking as the state of the local filesystem objects before a refresh is applied
 - icloudds_icloud_before.log - represents what `icloudds` is tracking as the state of icloud folders and files before a refresh is applied
 - icloudds_local_after.log - represents what `icloudds` is tracking as the state of the local filesystem objects after the refresh is applied
@@ -115,7 +119,7 @@ By default, `icloudds` creates the logging log file in the current working direc
 # Clone, Install dependencies, Build, Install and Run
 `icloudds` depends on a forked version of python pyicloud library implementation pyicloud @ git+https://github.com/gordonaspin/pyicloud.git. This forked implementation has added features to properly set timestamps of objects uploaded to iCloud Drive, it also implements move functionality to move a folder, or folders to a target folder. It also resolves a retrieval limit of 200 albums (in Photos). Do not use the `pyicloud` Python package that can be installed using `pip`, it is old and does not have the required features.
 
-To build `icloudds`, you need Python, a few dependencies, and a virtual environment if you wish. I use pyenv and virtualenv:
+To build `icloudds`, you need Python, a few dependencies, and a virtual environment if you wish. I use pyenv and venv:
 
 ### Clone
 To clone the repo:
@@ -136,6 +140,8 @@ $ pyenv local 3.14.2                #optional if using pyenv and virtual environ
 $ python -m venv .venv              #optional if using virtual environments
 $ source .venv/bin/activate         #optional if using virtual environments
 $ pip install -r requirements.txt   #optional, as installing the wheel below will install dependencies also
+$ mkdir -p dist
+$ rm -f dist/*
 $ python -m build
 $ pip install dist/*.whl
 $ icloudds -h
@@ -152,9 +158,6 @@ $ python -m build
 $ pip install dist/*.whl
 ```
 ## Usage
-
-[//]: # (This is now only a copy&paste from --help output)
-
 ```bash
 $ python icloudds.py -h
 ```
@@ -196,13 +199,21 @@ Command line options are mostly self-explanatory, with extra detail here:
 | icloud-refresh-period | This is the period of time after which a full iCloud refresh is made and differences are applied. Even though `icloudds` checks root and trash counts, changes can happen that don't make counts change. Changes such as renames, moves, equal creates/deletes etc. So `icloudds` has to periodically do a full compare. |
 | debouce-period | When making changes on the local filesystem, many FileSystemEvents are generated. e.g. an update to a file will generate multiple FileModifiedEvents and a file creation will generate a FileCreatedEvent followed by multiple FileModifiedEvents. `icloudds` debounces these events by waiting for a period of silence once events are being collected.| 
 
-## Requirements
-
-- Python 3.14+
-- pyicloud
-- click
-- watchdog
-
+## Dependencies
+```code
+dependencies = [
+    "click==8.3.1",
+    "pyicloud @ git+https://github.com/gordonaspin/pyicloud.git",
+    "watchdog==6.0.0",
+    "timeloop-ng==1.0.0",
+    "fasteners==0.20",
+]
+```
+`click` for command-line options
+`pyicloud` for sending http requests to iCloud
+`watchdog` to watch the filesystem and generate events
+`timeloop` to schedule functions based on time
+`fasteners` to limit icloudds to one instance running
 
 ## Authentication
 
@@ -287,16 +298,14 @@ Suppose you specify a path in the logging-config.json as log/icloudds.log. This 
 ```bash
 $ docker run -it --restart=always --name icloudds -v "path/to/directory":/drive -v ~/.pyicloud:/cookies -v "/var/log":/home/docker/log <your-repo>/icloudds:latest -u username@email.com 
 ```
-The container has the default .ignore*, .include* and logging-config.json files in the /home/docker folder of the docker user and these are used by default. To change this you can edit the files in the container in /home/docker, or override by ciopying the files to a folder on the host and edit them and map that folder to /home/docker. Or you can build your own container with the contents changed, or you can specify the --include and --ignore command line arguments that refer to a path you mount to the container. e.g.:
+The container has the default .ignore-regexes.txt, .include-regexes.txt and logging-config.json files in the /home/docker folder of the docker user and these are used by default. To change this you can edit the files in the container in /home/docker, or override by copying the files to a folder on the host and edit them and map that folder to /home/docker. Or you can build your own container with the contents changed, or you can specify the --include-regexes and --ignore-regexes command line arguments that refer to a path you mount to the container. e.g.:
 
 #### Unchanged container, mount host folder over /home/docker:
 ```bash
 # Copy and edit the config files as needed
 $ cd ~/somepath
-$ docker cp icloudds:.include-icloud.txt .
-$ docker cp icloudds:.include-local.txt .
-$ docker cp icloudds:.ignore-icloud.txt .
-$ docker cp icloudds:.ignore-icloud.txt .
+$ docker cp icloudds:.include-regexes.txt .
+$ docker cp icloudds:.ignore-regexes.txt .
 $ docker cp icloudds:logging-config.json .
 
 $ docker run -it --name icloudds -v ~/iCloud\ Drive:/drive -v ~/.pyicloud:/cookies your-repo/icloudds -v ~/somepath:/home/docker -u username@email.com
@@ -304,6 +313,6 @@ $ docker run -it --name icloudds -v ~/iCloud\ Drive:/drive -v ~/.pyicloud:/cooki
 ```
 #### Unchanged container, mount a cfg folder and provide command line arguments
 ```bash
-$ docker run -it --name icloudds -v ~/iCloud\ Drive:/drive -v ~/.pyicloud:/cookies your-repo/icloudds -v ~/.config:/cfg -u username@email.com --ignore-icloud /cfg/<filename> --ignore-local /cfg/<filename> --include-icloud /cfg/<filename> --include-local /cfg/<filename> --logging-config /cfg/logging-config.json
+$ docker run -it --name icloudds -v ~/iCloud\ Drive:/drive -v ~/.pyicloud:/cookies your-repo/icloudds -v ~/.config:/cfg -u username@email.com --ignore-icloud /cfg/<filename> --ignore-local /cfg/<filename> --include-regexes /cfg/<filename> --exclude-regexes /cfg/<filename> --logging-config /cfg/logging-config.json
 ```
 In the example above, you would have your ignore files, include files and logging-config.json files in your `~/.config` folder and refer to them on the command line as `/cfg/filename`
