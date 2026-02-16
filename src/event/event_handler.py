@@ -181,42 +181,51 @@ class EventHandler(FileSystemEventHandler):
 
         logger.info("waiting for events to happen...")
         while True:
-            # Collect events until empty for a period to debouce events
+            # Collect FS events until empty for a period to debouce events
             self._collect_events_until_empty(
                 events=event_collector,
                 name="eventQ",
                 queue=self._event_queue,
                 empty_timeout=self.ctx.debounce_period.total_seconds())
+
             # When the background refresh is not running, we can process events
             with self._refresh_lock, self._pending_futures:
+
                 # Dispatch collected events, collated by path
                 self._dispatch_events(event_collector=event_collector, name="eventQ")
+
                 # Process any pending futures from event handling
                 while self._pending_futures:
                     self._process_pending_futures()
 
+                # if there are no pending futures, we can clear
+                logger.debug("suppressed paths being cleared: %s", self._suppressed_paths)
+                self._suppressed_paths.clear()
+
+                # collect and dispath ICloudFolderModifiedEvents
                 self._collect_events_until_empty(
                     events=event_collector,
                     name="refreshQ",
                     queue=self._refresh_queue,
                     empty_timeout=0)
+
                 self._dispatch_events(event_collector=event_collector, name="refreshQ")
-                # If a refresh is pending, apply it now
+
+                # If we have a refresh, try to apply it now
                 if self._refresh:
                     if not (self._pending_futures or self._event_queue.qsize()):
                         self._dump_state(local=self._local,
                                          icloud=self._icloud)
                         logger.debug(
                             "no pending futures or events, proceeding with applying refresh")
-                        changes = self._apply_icloud_refresh()
-                        self._suppressed_paths.clear()
+                        changes = self._apply_icloud_refresh() # may generate futures
                         if any(changes):
                             uploaded, downloaded, deleted, folders_created, renamed = changes
                             logger.info(
                                 "background refresh applied, %d uploaded, "
                                 "%d downloaded, %d deleted, %d folders created, "
                                 "%d files/folders renamed",
-                                uploaded,downloaded,deleted,folders_created,renamed)
+                                uploaded, downloaded, deleted, folders_created, renamed)
                         else:
                             logger.info("background refresh, no changes")
                         self._dump_state(
