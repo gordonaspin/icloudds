@@ -198,8 +198,7 @@ class EventHandler(FileSystemEventHandler):
                 while self._pending_futures:
                     self._process_pending_futures()
 
-                # if there are no pending futures, we can clear
-                logger.debug("suppressed paths being cleared: %s", self._suppressed_paths)
+                # since there are no pending futures, we can clear
                 self._suppressed_paths.clear()
 
                 # collect and dispath ICloudFolderModifiedEvents
@@ -380,7 +379,7 @@ class EventHandler(FileSystemEventHandler):
         else:
             if not isinstance(result, Nil):
                 logger.info("%s", result)
-            if isinstance(result, (Upload, Download, Rename, Move)):
+            if isinstance(result, (Upload, Rename, Move)):
                 self._enqueue(
                     event=ICloudFolderModifiedEvent(src_path=result.path.parent),
                     name="refreshQ",

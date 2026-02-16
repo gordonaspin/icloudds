@@ -39,7 +39,10 @@ def load_regexes(name: str) -> list[str] | None:
         return lines if lines else None
 
 CONTEXT_SETTINGS: dict = {"help_option_names": ["-h", "--help"], "max_content_width": 120}
-@click.command(help=NAME, context_settings=CONTEXT_SETTINGS, options_metavar="-d <directory> -u <apple-id> [options]", no_args_is_help=True)
+@click.command(help=NAME,
+               context_settings=CONTEXT_SETTINGS,
+               options_metavar="-d <directory> -u <apple-id> [options]",
+               no_args_is_help=True)
 @click.option("-d", "--directory",
               required=True,
               help="Local directory that should be used for download",
