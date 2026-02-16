@@ -336,7 +336,6 @@ class EventHandler(FileSystemEventHandler):
             self._event_table.get(type(event),
                                   lambda e: logger.warning("%s unhandled event %s", name, e))(event)
         event_collector.clear()
-        self._suppressed_paths.clear()
 
     def _process_pending_futures(self) -> None:
         """
