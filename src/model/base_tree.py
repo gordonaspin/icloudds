@@ -146,7 +146,7 @@ class BaseTree():
         for k in list(self.keys()):
             p: Path = Path(k)
             if p.is_relative_to(old_path):
-                new_key = k.replace(str(old_path), str(new_path))
+                new_key = str(k).replace(str(old_path), str(new_path))
                 with self._root as root:
                     if k in root:
                         self._root[new_key] = self._root.pop(k)
