@@ -159,81 +159,82 @@ class EventHandler(FileSystemEventHandler):
         """
         main processing loop for event handling
         """
-        event_collector: list[QueuedEvent] = []
-        # Initial refresh of local and iCloud trees, perform initial sync
-        logger.info("performing initial refresh of Local...")
-        self._local.refresh()
-        logger.info("performing initial refresh of iCloud Drive...")
-        if self._icloud.refresh():
-            self._dump_state(local=self._local, icloud=self._icloud)
-            self._sync_local_to_icloud()
-            self._sync_icloud(self._local, self._icloud)
-            self._sync_common(self._local, self._icloud)
-            self._delete_icloud_trash_items()
-            logger.info("initial sync complete")
-
-        # Register periodic jobs and start timeloop
-        self._timeloop.job(interval=self.ctx.icloud_check_period)(
-            self._is_icloud_dirty)
-        self._timeloop.job(interval=self.ctx.icloud_refresh_period)(
-            self._refresh_icloud)
-        self._timeloop.start()
-
-        logger.info("waiting for events to happen...")
+        # we do not want this to end ... catch any exception and sleep
+        # for a minute. Network errors are most likely and they should
+        # be transient.
         while True:
-            # Collect FS events until empty for a period to debouce events
-            self._collect_events_until_empty(
-                events=event_collector,
-                name="eventQ",
-                queue=self._event_queue,
-                empty_timeout=self.ctx.debounce_period.total_seconds())
+            try:
+                event_collector: list[QueuedEvent] = []
+                # Initial refresh of local and iCloud trees, perform initial sync
+                logger.info("performing initial refresh of Local...")
+                self._local.refresh()
+                logger.info("performing initial refresh of iCloud Drive...")
+                if self._icloud.refresh():
+                    self._dump_state(local=self._local, icloud=self._icloud)
+                    self._sync_local_to_icloud()
+                    self._sync_icloud(self._local, self._icloud)
+                    self._sync_common(self._local, self._icloud)
+                    self._delete_icloud_trash_items()
+                    logger.info("initial sync complete")
 
-            # When the background refresh is not running, we can process events
-            with self._refresh_lock, self._pending_futures:
+                # Register periodic jobs and start timeloop
+                self._timeloop.job(interval=self.ctx.icloud_check_period)(
+                    self._is_icloud_dirty)
+                self._timeloop.job(interval=self.ctx.icloud_refresh_period)(
+                    self._refresh_icloud)
+                self._timeloop.start()
 
-                # Dispatch collected events, collated by path
-                self._dispatch_events(event_collector=event_collector, name="eventQ")
+                logger.info("waiting for events to happen...")
+                while True:
+                    # Collect FS events until empty for a period to debouce events
+                    self._collect_events_until_empty(
+                        events=event_collector,
+                        name="eventQ",
+                        queue=self._event_queue,
+                        empty_timeout=self.ctx.debounce_period.total_seconds())
 
-                # Process any pending futures from event handling
-                while self._pending_futures:
-                    self._process_pending_futures()
+                    # When the background refresh is not running, we can process events
+                    with self._refresh_lock, self._pending_futures:
 
-                # since there are no pending futures, we can clear
-                self._suppressed_paths.clear()
+                        # Dispatch collected events, collated by path
+                        self._dispatch_events(event_collector=event_collector, name="eventQ")
 
-                # collect and dispath ICloudFolderModifiedEvents
-                self._collect_events_until_empty(
-                    events=event_collector,
-                    name="refreshQ",
-                    queue=self._refresh_queue,
-                    empty_timeout=0)
+                        # Process any pending futures from event handling
+                        while self._pending_futures:
+                            self._process_pending_futures()
 
-                self._dispatch_events(event_collector=event_collector, name="refreshQ")
+                        # since there are no pending futures, we can clear
+                        self._suppressed_paths.clear()
 
-                # If we have a refresh, try to apply it now
-                if self._refresh:
-                    if not (self._pending_futures or self._event_queue.qsize()):
-                        self._dump_state(local=self._local,
-                                         icloud=self._icloud)
-                        logger.debug(
-                            "no pending futures or events, proceeding with applying refresh")
-                        changes = self._apply_icloud_refresh() # may generate futures
-                        if any(changes):
-                            uploaded, downloaded, deleted, folders_created, renamed = changes
-                            logger.info(
-                                "background refresh applied, %d uploaded, "
-                                "%d downloaded, %d deleted, %d folders created, "
-                                "%d files/folders renamed",
-                                uploaded, downloaded, deleted, folders_created, renamed)
-                        else:
-                            logger.info("background refresh, no changes")
-                        self._dump_state(
-                            local=self._local, icloud=self._icloud, refresh=self._refresh)
-                        self._icloud: ICloudTree = self._refresh
-                    else:
-                        logger.info(
-                            "background refresh discarded due to pending futures or events")
-                    self._refresh: ICloudTree = None
+                        # collect and dispath ICloudFolderModifiedEvents
+                        self._collect_events_until_empty(
+                            events=event_collector,
+                            name="refreshQ",
+                            queue=self._refresh_queue,
+                            empty_timeout=0)
+
+                        self._dispatch_events(event_collector=event_collector, name="refreshQ")
+
+                        # If we have a refresh, try to apply it now
+                        if self._refresh:
+                            if not (self._pending_futures or self._event_queue.qsize()):
+                                self._dump_state(local=self._local,
+                                                icloud=self._icloud)
+                                logger.debug(
+                                    "no pending futures or events, applying refresh")
+                                self._apply_icloud_refresh() # may generate futures
+                                self._dump_state(
+                                    local=self._local, icloud=self._icloud, refresh=self._refresh)
+                                self._icloud: ICloudTree = self._refresh
+                            else:
+                                logger.info(
+                                    "icloud refresh discarded due to pending futures or events")
+                            self._refresh: ICloudTree = None
+            except Exception as e:
+                logger.debug("caught exception %e in EventHandler.run()", e)
+                logger.debug("sleeping for a minute...")
+                sleep(60)
+
 
     def _refresh_icloud(self, force: bool=False) -> None:
         """
@@ -390,7 +391,7 @@ class EventHandler(FileSystemEventHandler):
                         event=ICloudFolderModifiedEvent(src_path=result.dest_path.parent),
                         queue=self._refresh_queue)
 
-    def _apply_icloud_refresh(self) -> tuple[int, int, int, int, int]:
+    def _apply_icloud_refresh(self) -> None:
         """
         Apply the queued iCloud refresh to the local tree.
         """
@@ -399,10 +400,17 @@ class EventHandler(FileSystemEventHandler):
             self._icloud, self._refresh)
         uploaded, updated_downloaded = self._sync_common(
             self._icloud, self._refresh)
+        downloaded += updated_downloaded
         deleted = self._icloud.keys() - self._refresh.keys()
         for path in deleted:
             self._delete_local(Path(path))
-        return (uploaded, downloaded + updated_downloaded, len(deleted), folders_created, renamed)
+        if any(uploaded, downloaded, deleted, folders_created, renamed):
+            logger.info("icloud refresh applied, %d uploaded, "
+                "%d downloaded, %d deleted, %d folders created, "
+                "%d files/folders renamed",
+                uploaded, downloaded, deleted, folders_created, renamed)
+        else:
+            logger.info("icloud refresh, no changes")
 
     def _apply_renames(self, these: ICloudTree, those: ICloudTree) -> int:
         """
@@ -885,9 +893,6 @@ class EventHandler(FileSystemEventHandler):
             timestamp=time(),
             event=event)
         queue.put(qe)
-
-#    def on_any_event(self, event) -> None:
-#        """Handle any filesystem event (unused)."""
 
     def on_created(self, event) -> None:
         """Handle filesystem created event callback from watchdog."""
