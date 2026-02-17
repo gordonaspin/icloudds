@@ -20,7 +20,7 @@ from pyicloud.services.drive import (
     DriveNode,
     CLOUD_DOCS_ZONE_ID_ROOT,
     CLOUD_DOCS_ZONE_ID_TRASH)
-from pyicloud.exceptions import PyiCloudAPIResponseException
+from pyicloud.exceptions import PyiCloudAPIResponseException, PyiCloudFailedLoginException
 
 from context import Context
 import constants
@@ -547,7 +547,7 @@ class ICloudTree(BaseTree):
         Categorizes exceptions and logs appropriate messages.
         Clears authentication state on API failures to force re-authentication."""
         match e:
-            case PyiCloudAPIResponseException():
+            case PyiCloudAPIResponseException() | PyiCloudFailedLoginException():
                 logger.warning("iCloud Drive Exception: %s %s", e.__class__.__name__, e)
                 logger.warning(traceback.format_exc())
                 self._is_authenticated: bool = False

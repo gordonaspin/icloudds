@@ -169,6 +169,7 @@ def main(directory: str,
             observer.start()
             event_handler.run()
             observer.join()
+            logger.error("event handler thread ended unexpectedly")
         except Exception as e:
             logger.critical("exception in main thread: %s %s", e.__class__.__name__, e)
             logger.critical(traceback.format_exc())
