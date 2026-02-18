@@ -481,7 +481,6 @@ class EventHandler(FileSystemEventHandler):
         for docwsid, new_path in folder_renames + file_renames: # rename folders first
             new_path = Path(new_path)
             old_path = Path(these_docwsids[docwsid])
-            renames += 1
             self._suppressed_paths.add(Path(old_path))
             self._suppressed_paths.add(Path(new_path))
             try:
