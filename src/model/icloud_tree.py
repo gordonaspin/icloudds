@@ -219,16 +219,16 @@ class ICloudTree(BaseTree):
         Applies ignore/include rules as specified.
         Returns a list of Future objects for further processing or a Refresh.
         """
-        root_or_trash: ThreadSafePathDict = self._root if root else self._trash
+        _the_dict: ThreadSafePathDict = self._root if root else self._trash
         futures: list[Future] = []
         children: list[DriveNode] = []
         result: ActionResult = Refresh(path=path, success=True)
-        cfi: ICloudFolderInfo = root_or_trash.get(path, None)
+        cfi: ICloudFolderInfo = _the_dict.get(path, None)
 
         if cfi is None:
             result: Nil = Nil()
         else:
-            children = root_or_trash[path].node.get_children(force=True)
+            children = _the_dict[path].node.get_children(force=True)
 
         for child in children:
             if path == BaseTree.ROOT_FOLDER_NAME:
@@ -240,8 +240,9 @@ class ICloudTree(BaseTree):
                              "root" if root else "trash",
                               child_path)
                 continue
+
             if child.type == "folder":
-                self.add(path=child_path, _obj=ICloudFolderInfo(child), _root=root_or_trash)
+                self.add(path=child_path, _obj=ICloudFolderInfo(child), _root=root)
                 logger.debug("iCloud Drive %s add folder %s",
                              "root" if root else "trash",
                               child_path)
@@ -263,7 +264,7 @@ class ICloudTree(BaseTree):
                             ignore=ignore,
                             executor=executor)
             elif child.type == "file":
-                self.add(path=child_path, _obj=ICloudFileInfo(child), _root=root_or_trash)
+                self.add(path=child_path, _obj=ICloudFileInfo(child), _root=root)
                 logger.debug("iCloud Drive %s add file %s",
                              "root" if root else "trash",
                               child_path)
