@@ -408,10 +408,9 @@ class EventHandler(FileSystemEventHandler):
             self._icloud, self._refresh)
         downloaded += updated_downloaded
         deleted_paths = self._icloud.keys() - self._refresh.keys()
-        deleted = len(deleted_paths)
 
         for path in deleted_paths:
-            self._delete_local(Path(path))
+            deleted += self._delete_local(Path(path))
 
         if any((uploaded, downloaded, deleted, folders_created, renamed)):
             logger.info("icloud refresh applied, %d uploaded, "
@@ -557,16 +556,17 @@ class EventHandler(FileSystemEventHandler):
             path = Path(self._icloud.get(name, root=False).node.data.get("restorePath"))
             if path:
                 self._suppressed_paths.add(path)
-                self._delete_local(path)
+                deleted: int = self._delete_local(path)
                 lfi = self._local.get(path, None)
                 if lfi and isinstance(lfi, LocalFileInfo):
-                    deleted_count += 1
+                    deleted_count += deleted
         return deleted_count
 
-    def _delete_local(self, path: Path) -> None:
+    def _delete_local(self, path: Path) -> int:
         """
         Delete a local file or folder at the given path.
         """
+        deleted: int = 0
         lfi: LocalFolderInfo | LocalFileInfo = self._local.get(path, None)
         if lfi is not None:
             self._suppressed_paths.add(path)
@@ -578,7 +578,9 @@ class EventHandler(FileSystemEventHandler):
                 logger.info("deleting local file %s", path)
                 if fs_object_path.is_file():
                     fs_object_path.unlink()
+                    deleted = 1
             self._local.pop(path=path)
+        return deleted
 
     def _handle_file_created(self, event: ICDSFileCreatedEvent) -> None:
         """
