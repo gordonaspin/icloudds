@@ -81,7 +81,7 @@ class LocalTree(BaseTree):
     def document_root(self):
         """return document root"""
         return self.ctx.directory
-    
+
     @override
     def refresh(self) -> None:
         """Refresh the local file system tree by scanning the root directory."""

@@ -110,7 +110,7 @@ class ICloudTree(BaseTree):
         if self.drive is None:
             self.authenticate()
         return self.drive.service_root
-    
+
     def authenticate(self) -> None:
         """
         Authenticate with iCloud using provided credentials.

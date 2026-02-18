@@ -173,9 +173,9 @@ class EventHandler(FileSystemEventHandler):
                     self._dump_state(local=self._local, icloud=self._icloud)
                     uploaded, icloud_folders_created = self._sync_local_to_icloud()
                     downloaded, local_folders_created = self._sync_icloud(self._local, self._icloud)
-                    updated_uploaded, updated_downloaded = self._sync_common(self._local, self._icloud)
-                    uploaded += updated_uploaded
-                    downloaded += updated_downloaded
+                    updated_up, updated_down = self._sync_common(self._local, self._icloud)
+                    uploaded += updated_up
+                    downloaded += updated_down
                     local_files_deleted, local_folders_deleted = self._delete_icloud_trash_items()
                     logger.info("initial sync complete")
                     if any((uploaded, downloaded, local_files_deleted,

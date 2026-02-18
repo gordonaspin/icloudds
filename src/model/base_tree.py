@@ -59,8 +59,8 @@ class BaseTree():
     @property
     def document_root(self):
         """return document root"""
-        return self.drive.service_root
-    
+        return "base"
+
     def keys(self, root:bool=True):
         """returns keys in root or trash"""
         root = self._root if root else self._trash
@@ -70,11 +70,6 @@ class BaseTree():
         """returns items in root or trash"""
         root = self._root if root else self._trash
         return root.items()
-
-    @property
-    def document_root(self):
-        """return document root"""
-        return "base"
 
     @property
     def ignores_regexes(self) -> list[re.Pattern]:
