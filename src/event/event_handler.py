@@ -395,15 +395,24 @@ class EventHandler(FileSystemEventHandler):
         """
         Apply the queued iCloud refresh to the local tree.
         """
+        renamed: int = 0
+        downloaded: int = 0
+        uploaded: int = 0
+        updated_downloaded: int = 0
+        deleted: int = 0
+
         renamed = self._apply_renames(self._icloud, self._refresh)
         downloaded, folders_created = self._sync_icloud(
             self._icloud, self._refresh)
         uploaded, updated_downloaded = self._sync_common(
             self._icloud, self._refresh)
         downloaded += updated_downloaded
-        deleted = self._icloud.keys() - self._refresh.keys()
-        for path in deleted:
+        deleted_paths = self._icloud.keys() - self._refresh.keys()
+        deleted = len(deleted_paths)
+
+        for path in deleted_paths:
             self._delete_local(Path(path))
+
         if any((uploaded, downloaded, deleted, folders_created, renamed)):
             logger.info("icloud refresh applied, %d uploaded, "
                 "%d downloaded, %d deleted, %d folders created, "
@@ -431,12 +440,13 @@ class EventHandler(FileSystemEventHandler):
                     folder_renames.append((docwsid, those_docwsids[docwsid]))
                 else:
                     file_renames.append((docwsid, those_docwsids[docwsid]))
-        # sort by length (shortest first)
-        folder_renames.sort(key=lambda x: len(x[1]))
-        file_renames.sort(key=lambda x: len(x[1]))
+
+        # sort by shortest path (least number of folders)
+        folder_renames.sort(key=lambda x: x[1].as_posix().count('/'))
+        file_renames.sort(key=lambda x: x[1].as_posix().count('/'))
 
         renames: int = 0
-        for docwsid, new_path in folder_renames + file_renames:         # rename folders first
+        for docwsid, new_path in folder_renames + file_renames: # rename folders first
             new_path = Path(new_path)
             old_path = Path(these_docwsids[docwsid])
             renames += 1
@@ -447,7 +457,7 @@ class EventHandler(FileSystemEventHandler):
                 new_full_path = self.ctx.directory.joinpath(new_path)
                 old_full_path.rename(new_full_path)
                 logger.info("rename %s to %s", old_path, new_path)
-            except FileNotFoundError:
+            except FileNotFoundError:                           # we already renamed the parent
                 old_path = new_path.parent.joinpath(old_path.name)
                 old_full_path = self.ctx.directory.joinpath(old_path)
                 new_full_path = self.ctx.directory.joinpath(new_path)

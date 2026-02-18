@@ -33,9 +33,15 @@ def load_regexes(name: str) -> list[str] | None:
     """
     if not Path.is_file(name):
         return []
+    lines = []
     with open(file=name, encoding="utf-8") as f:
-        lines = f.readlines()
-        lines = [line.strip() for line in lines if not line.startswith("#")]
+        for line in f.readlines():
+            l = line.strip()
+            if l.startswith('#'):
+                continue
+            if len(l):
+                lines.append(l)
+
         return lines if lines else None
 
 CONTEXT_SETTINGS: dict = {"help_option_names": ["-h", "--help"], "max_content_width": 120}
