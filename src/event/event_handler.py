@@ -404,7 +404,7 @@ class EventHandler(FileSystemEventHandler):
         deleted = self._icloud.keys() - self._refresh.keys()
         for path in deleted:
             self._delete_local(Path(path))
-        if any(uploaded, downloaded, deleted, folders_created, renamed):
+        if any((uploaded, downloaded, deleted, folders_created, renamed)):
             logger.info("icloud refresh applied, %d uploaded, "
                 "%d downloaded, %d deleted, %d folders created, "
                 "%d files/folders renamed",
