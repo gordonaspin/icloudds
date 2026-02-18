@@ -620,6 +620,7 @@ class EventHandler(FileSystemEventHandler):
                 folders_deleted = len([p for p in ffs if p.is_dir()])
                 files_deleted = len([p for p in ffs if p.is_file()])
                 shutil.rmtree(full_path, ignore_errors=True, onexc=None)
+                self._local.prune(path=path)
             elif isinstance(lfi, LocalFileInfo):
                 logger.info("deleting local file %s", path)
                 if full_path.is_file():
