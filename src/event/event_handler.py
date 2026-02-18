@@ -935,19 +935,17 @@ class EventHandler(FileSystemEventHandler):
         """
         # Drop events that are in our suppressed path list
         if event.src_path in self._suppressed_paths:
-            logger.debug("%s not enqueuing event (path suppressed): %s", name, event.src_path)
+            logger.debug("%s not enqueuing event (path suppressed) %s", name, event)
             return
         # We don't care about these events
         if self._local.ignore(event.src_path) or self._icloud.ignore(event.src_path):
-            logger.debug("%s not enqueuing event (ignored src_path): %s", name, event.src_path)
+            logger.debug("%s not enqueuing event (ignored src_path): %s", name, event)
             return
         # We don't care about things moving our of our universe
         if event.dest_path:
             if (self._local.ignore(event.dest_path)
                 or self._icloud.ignore(event.dest_path)):
-                logger.debug("%s not enqueuing event (ignored dest_path): %s",
-                             name,
-                             event.dest_path)
+                logger.debug("%s not enqueuing event (ignored dest_path): %s", name, event)
                 return
         logger.debug("%s enqueueing: %s", name, event)
         qe: QueuedEvent = QueuedEvent(
