@@ -166,16 +166,33 @@ class EventHandler(FileSystemEventHandler):
             try:
                 event_collector: list[QueuedEvent] = []
                 # Initial refresh of local and iCloud trees, perform initial sync
-                logger.info("performing initial refresh of Local...")
+                logger.info("scan local %s", self._local.document_root)
                 self._local.refresh()
-                logger.info("performing initial refresh of iCloud Drive...")
+                logger.info("scan iCloud Drive %s", self._icloud.document_root)
                 if self._icloud.refresh():
                     self._dump_state(local=self._local, icloud=self._icloud)
-                    self._sync_local_to_icloud()
-                    self._sync_icloud(self._local, self._icloud)
-                    self._sync_common(self._local, self._icloud)
-                    self._delete_icloud_trash_items()
+                    uploaded, icloud_folders_created = self._sync_local_to_icloud()
+                    downloaded, local_folders_created = self._sync_icloud(self._local, self._icloud)
+                    updated_uploaded, updated_downloaded = self._sync_common(self._local, self._icloud)
+                    uploaded += updated_uploaded
+                    downloaded += updated_downloaded
+                    local_files_deleted, local_folders_deleted = self._delete_icloud_trash_items()
                     logger.info("initial sync complete")
+                    if any((uploaded, downloaded, local_files_deleted,
+                        local_folders_deleted, local_folders_created, icloud_folders_created)):
+                        logger.info("icloud refresh applied, "
+                                    "%d uploaded, "
+                                    "%d downloaded, "
+                                    "%d local files deleted, "
+                                    "%d local folders deleted, "
+                                    "%d local folders created, "
+                                    "%d iCloud folders created",
+                            uploaded,
+                            downloaded,
+                            local_files_deleted,
+                            local_folders_deleted,
+                            local_folders_created,
+                            icloud_folders_created)
 
                 # Register periodic jobs and start timeloop
                 self._timeloop.job(interval=self.ctx.icloud_check_period)(
@@ -395,32 +412,47 @@ class EventHandler(FileSystemEventHandler):
         """
         Apply the queued iCloud refresh to the local tree.
         """
-        renamed: int = 0
-        downloaded: int = 0
         uploaded: int = 0
+        downloaded: int = 0
+        files_deleted: int = 0
+        folders_deleted: int = 0
+        folders_created: int = 0
+        files_renamed: int = 0
+        folders_renamed: int = 0
         updated_downloaded: int = 0
-        deleted: int = 0
 
-        renamed = self._apply_renames(self._icloud, self._refresh)
-        downloaded, folders_created = self._sync_icloud(
-            self._icloud, self._refresh)
-        uploaded, updated_downloaded = self._sync_common(
-            self._icloud, self._refresh)
+        files_renamed, folders_renamed = self._apply_renames(self._icloud, self._refresh)
+        downloaded, folders_created = self._sync_icloud(self._icloud, self._refresh)
+        uploaded, updated_downloaded = self._sync_common(self._icloud, self._refresh)
         downloaded += updated_downloaded
         deleted_paths = self._icloud.keys() - self._refresh.keys()
 
         for path in deleted_paths:
-            deleted += self._delete_local(Path(path))
+            _files, _folders = self._delete_local(Path(path))
+            files_deleted += _files
+            folders_deleted += _folders
 
-        if any((uploaded, downloaded, deleted, folders_created, renamed)):
-            logger.info("icloud refresh applied, %d uploaded, "
-                "%d downloaded, %d deleted, %d folders created, "
-                "%d files/folders renamed",
-                uploaded, downloaded, deleted, folders_created, renamed)
+        if any((uploaded, downloaded, files_deleted, folders_deleted,
+                folders_created, files_renamed, folders_renamed)):
+            logger.info("icloud refresh applied, "
+                        "%d uploaded, "
+                        "%d downloaded, "
+                        "%d local files deleted, "
+                        "%d local folders deleted, "
+                        "%d local folders created, "
+                        "%d local files renamed, "
+                        "%d local folders renamed",
+                        uploaded,
+                        downloaded,
+                        files_deleted,
+                        folders_deleted,
+                        folders_created,
+                        files_renamed,
+                        folders_renamed)
         else:
             logger.info("icloud refresh, no changes")
 
-    def _apply_renames(self, these: ICloudTree, those: ICloudTree) -> int:
+    def _apply_renames(self, these: ICloudTree, those: ICloudTree) -> tuple[int, int]:
         """
         Synchronize renames between existing ICloudTree and the refreshed ICloudTree
         by matching files via their docwsids. For each file/folder identified by the
@@ -444,7 +476,8 @@ class EventHandler(FileSystemEventHandler):
         folder_renames.sort(key=lambda x: x[1].as_posix().count('/'))
         file_renames.sort(key=lambda x: x[1].as_posix().count('/'))
 
-        renames: int = 0
+        files_renamed: int = 0
+        folders_renamed: int = 0
         for docwsid, new_path in folder_renames + file_renames: # rename folders first
             new_path = Path(new_path)
             old_path = Path(these_docwsids[docwsid])
@@ -455,17 +488,25 @@ class EventHandler(FileSystemEventHandler):
                 old_full_path = self.ctx.directory.joinpath(old_path)
                 new_full_path = self.ctx.directory.joinpath(new_path)
                 old_full_path.rename(new_full_path)
+                if new_full_path.is_file():
+                    files_renamed += 1
+                else:
+                    folders_renamed += 1
                 logger.info("rename %s to %s", old_path, new_path)
             except FileNotFoundError:                           # we already renamed the parent
                 old_path = new_path.parent.joinpath(old_path.name)
                 old_full_path = self.ctx.directory.joinpath(old_path)
                 new_full_path = self.ctx.directory.joinpath(new_path)
                 old_full_path.rename(new_full_path)
+                if new_full_path.is_file():
+                    files_renamed += 1
+                else:
+                    folders_renamed += 1
                 logger.info("rename %s to %s", old_path, new_path)
 
             these.re_key(old_path, new_path)
 
-        return renames
+        return files_renamed, folders_renamed
 
     def _sync_icloud(self, these: LocalTree | ICloudTree, those: ICloudTree) -> tuple[int, int]:
         """
@@ -529,58 +570,65 @@ class EventHandler(FileSystemEventHandler):
                              path, left, left_fi, right, right_fi)
         return (uploaded_count, downloaded_count)
 
-    def _sync_local_to_icloud(self) -> int:
+    def _sync_local_to_icloud(self) -> tuple[int, int]:
         """
         Sync files from Local to iCloud Drive that are only present locally.
         """
-        uploaded_count: int = 0
+        files_uploaded: int = 0
+        folders_created: int = 0
         for path in self._local.keys() - self._icloud.keys():
             if self._icloud.ignore(path):
                 continue
             logger.debug("only in local: %s %s", path, self._local.get(path))
             if isinstance(self._local.get(path), LocalFolderInfo):
                 self._handle_folder_created(event=ICDSFolderCreatedEvent(src_path=Path(path)))
+                folders_created += 1
             else:
                 self._handle_file_modified(event=ICDSFileModifiedEvent(src_path=Path(path)))
-                uploaded_count += 1
-        return uploaded_count
+                files_uploaded += 1
+        return files_uploaded, folders_created
 
-    def _delete_icloud_trash_items(self) -> int:
+    def _delete_icloud_trash_items(self) -> tuple[int, int]:
         """
         Delete local files that correspond to items in iCloud Drive trash.
         """
-        deleted_count = 0
+        files_deleted = 0
+        folders_deleted = 0
         for name in self._icloud.keys(root=False):
             if name == BaseTree.ROOT_FOLDER_NAME:
                 continue
             path = Path(self._icloud.get(name, root=False).node.data.get("restorePath"))
             if path:
                 self._suppressed_paths.add(path)
-                deleted: int = self._delete_local(path)
-                lfi = self._local.get(path, None)
-                if lfi and isinstance(lfi, LocalFileInfo):
-                    deleted_count += deleted
-        return deleted_count
+                _files, _folders = self._delete_local(path)
+                files_deleted += _files
+                folders_deleted += _folders
+        return files_deleted, folders_deleted
 
-    def _delete_local(self, path: Path) -> int:
+    def _delete_local(self, path: Path) -> tuple[int, int]:
         """
         Delete a local file or folder at the given path.
         """
-        deleted: int = 0
+        files_deleted: int = 0
+        folders_deleted: int = 0
         lfi: LocalFolderInfo | LocalFileInfo = self._local.get(path, None)
         if lfi is not None:
             self._suppressed_paths.add(path)
-            fs_object_path: Path = self.ctx.directory.joinpath(path)
+            full_path: Path = self.ctx.directory.joinpath(path)
             if isinstance(lfi, LocalFolderInfo):
                 logger.info("deleting local folder %s", path)
-                shutil.rmtree(fs_object_path, ignore_errors=True, onexc=None)
+                ffs = list(full_path.rglob('*'))
+                folders_deleted = len([p for p in ffs if p.is_dir()])
+                files_deleted = len([p for p in ffs if p.is_file()])
+                shutil.rmtree(full_path, ignore_errors=True, onexc=None)
             elif isinstance(lfi, LocalFileInfo):
                 logger.info("deleting local file %s", path)
-                if fs_object_path.is_file():
-                    fs_object_path.unlink()
-                    deleted = 1
-            self._local.pop(path=path)
-        return deleted
+                if full_path.is_file():
+                    full_path.unlink()
+                    files_deleted = 1
+            if path in self._local.keys():
+                self._local.pop(path=path)
+        return files_deleted, folders_deleted
 
     def _handle_file_created(self, event: ICDSFileCreatedEvent) -> None:
         """
@@ -701,7 +749,9 @@ class EventHandler(FileSystemEventHandler):
             logger.warning("local file/folder %s reappeared after file delete", event.src_path)
             return
 
-        self._local.pop(event.src_path)
+        if event.src_path in self._local.keys():
+            self._local.pop(event.src_path)
+
         parent_path: Path = event.src_path.parent
         parent: ICloudFolderInfo = self._icloud.get(parent_path, None)
 

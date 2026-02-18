@@ -103,6 +103,14 @@ class ICloudTree(BaseTree):
             max((os.cpu_count() or 1) * 4, constants.DOWNLOAD_WORKERS))
         super().__init__(ctx)
 
+    @override
+    @property
+    def document_root(self):
+        """return document root"""
+        if self.drive is None:
+            self.authenticate()
+        return self.drive.service_root
+    
     def authenticate(self) -> None:
         """
         Authenticate with iCloud using provided credentials.
