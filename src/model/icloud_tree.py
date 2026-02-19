@@ -128,7 +128,7 @@ class ICloudTree(BaseTree):
             )
         self.drive: DriveService = api.drive
         self._is_authenticated: bool = True
-
+        logger.debug("iCloud Drive is %s@%s", self.ctx.username, self.drive.service_root)
     @override
     def refresh(self) -> None:
         """
@@ -140,8 +140,6 @@ class ICloudTree(BaseTree):
         succeeded: bool = True
         try:
             self.authenticate()
-            logger.debug("refreshing iCloud Drive %s::%s...",
-                         self.ctx.username, self.drive.service_root)
             self._root.clear()
             self._trash.clear()
             self._root[BaseTree.ROOT_FOLDER_NAME] = ICloudFolderInfo(node=self.drive.root)
@@ -150,7 +148,7 @@ class ICloudTree(BaseTree):
             with self._threadpool as executor:
                 pending = set()
                 for root in [True, False]:
-                    logger.debug("refreshing iCloud Drive %s...", "root" if root else "trash")
+                    logger.debug("refreshing iCloud Drive %s", "root" if root else "trash")
                     future = executor.submit(
                         self.process_folder,
                         root=root,
@@ -172,7 +170,7 @@ class ICloudTree(BaseTree):
             root_files_count = sum(1 for _ in self.files(root=True))
             trash_files_count = sum(1 for _ in self.files(root=False))
             if self._root_count() != root_files_count + trash_files_count:
-                raise MismatchException(f"Mismatch root_count: {self._root_count()} "
+                raise MismatchException(f"mismatch root_count: {self._root_count()} "
                                         f"!= root_files_count: {root_files_count} +"
                                         f" trash_files_count: {trash_files_count}")
         except Exception as e:
@@ -290,7 +288,7 @@ class ICloudTree(BaseTree):
             try:
                 res = child_node.delete()
                 status = res['items'][0]['status']
-                logger.debug("iCloud Drive deleted %s result: %s", path, status)
+                logger.debug("deleted %s result: %s", path, status)
                 parent_node.remove(child_node)
                 if isinstance(cfi, ICloudFolderInfo):
                     self.prune(path)
@@ -298,7 +296,7 @@ class ICloudTree(BaseTree):
                     self.pop(path)
                 result = Delete(success=True, path=path)
             except ValueError as e:
-                logger.warning("value error in delete %s", e)
+                logger.warning("exception ValueError in delete %s", e)
                 result = Delete(success=False,
                                 path=path,
                                 fn=self.delete,
@@ -327,12 +325,12 @@ class ICloudTree(BaseTree):
             if cfi is not None and dfi is not None:
                 res: dict = self.drive.move_nodes_to_node([cfi.node], dfi.node)
                 status: str = res['items'][0]['status']
-                logger.debug("iCloud Drive moved %s result: %s", path, status)
+                logger.debug("iCloud Drive move %s result: %s", path, status)
                 self._root.pop(path)
                 self._root[dest_path] = cfi
                 result = Move(success=True, path=path, dest_path=dest_path)
         except Exception as e:
-            logger.error("Exception in move %s", e)
+            logger.error("exception in move %s", e)
             self._handle_drive_exception(e)
             result = Move(success=False,
                           path=path,
@@ -354,7 +352,7 @@ class ICloudTree(BaseTree):
             if cfi is not None:
                 res: dict = cfi.node.rename(new_path.name)
                 status: str = res['items'][0]['status']
-                logger.debug("iCloud Drive renamed %s result: %s", old_path, status)
+                logger.debug("iCloud Drive rename %s result: %s", old_path, status)
                 self.re_key(old_path=old_path, new_path=new_path)
                 result = Rename(success=True, path=new_path)
         except Exception as e:
@@ -383,7 +381,7 @@ class ICloudTree(BaseTree):
                                    ctime=lfi.created_time.timestamp())
             result = Upload(success=True, path=path)
         except FileNotFoundError as e:
-            logger.warning("%s File %s not found during upload", e, path)
+            logger.warning("exception FileNotFoundError %s file %s in upload", e, path)
             result = Upload(success=False,
                             path=path,
                             fn=self.upload,
@@ -453,7 +451,7 @@ class ICloudTree(BaseTree):
             for folder in path.parts:
                 folder_path: Path = folder_path.joinpath(folder)
                 if folder_path not in self._root:
-                    logger.debug("iCloud Drive creating parent folder %s...", folder_path)
+                    logger.debug("iCloud Drive mkdir %s", folder_path)
                     res: dict = parent_node.mkdir(folder)
                     status: str = res['folders'][0]['status']
                     logger.debug("iCloud Drive mkdir %s result: %s", path, status)
@@ -497,8 +495,8 @@ class ICloudTree(BaseTree):
             # don't want to lock as trash_has_changed() is a lengthy operation
             if self._root_has_changed() or self._trash_has_changed():
                 return True
-        except Exception:
-            logger.warning("bailing out on is_dirty()")
+        except Exception as e:
+            logger.warning("exception in is_dirty() %s", e)
 
         return False
 
@@ -529,7 +527,7 @@ class ICloudTree(BaseTree):
             post_count = self.drive.get_node_data(CLOUD_DOCS_ZONE_ID_ROOT).get('fileCount')
             self.drive.root.data['fileCount'] = post_count
         except Exception as e:
-            logger.warning("iCloud Drive get fileCount failed: %s", e)
+            logger.warning("exception in _root_has_changed: %s", e)
             return False
         return pre_count != post_count
 
@@ -546,7 +544,7 @@ class ICloudTree(BaseTree):
             post_count = self.drive.get_node_data(CLOUD_DOCS_ZONE_ID_TRASH).get('numberOfItems')
             self.drive.trash.data['numberOfItems'] = post_count
         except Exception as e:
-            logger.warning("iCloud Drive trash refresh failed: %s", e)
+            logger.warning("exception in _trash_has_changed: %s", e)
             return False
         return pre_count != post_count
 
@@ -557,11 +555,11 @@ class ICloudTree(BaseTree):
         Clears authentication state on API failures to force re-authentication."""
         match e:
             case PyiCloudAPIResponseException() | PyiCloudFailedLoginException():
-                logger.warning("iCloud Drive Exception: %s %s", e.__class__.__name__, e)
+                logger.warning("PyiCloud exception: %s %s", e.__class__.__name__, e)
                 logger.warning(traceback.format_exc())
                 self._is_authenticated: bool = False
             case MismatchException():
-                logger.debug("iCloud Drive Exception: %s in refresh: %s", e.__class__.__name__, e)
+                logger.debug("exception in refresh: %s", e)
             case _:
-                logger.error("iCloud Drive unhandled Exception: %s %s", e.__class__.__name__, e)
+                logger.error("unhandled exception in ICloudTree: %s %s", e.__class__.__name__, e)
                 logger.error(traceback.format_exc())

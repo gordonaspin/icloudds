@@ -86,7 +86,7 @@ class BaseTree():
         Refresh the tree state by reloading the current file/folder structure.
         Subclasses must implement this method with tree-specific logic.
         """
-        raise NotImplementedError("Subclasses should implement this method")
+        raise NotImplementedError("subclasses should implement this method")
 
     def _remove_ignored_items(self) -> None:
         """

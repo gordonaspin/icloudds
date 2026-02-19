@@ -1,4 +1,4 @@
 #!/bin/bash
 set -euo pipefail
-scripts/build.install.sh
+scripts/build.sh
 scripts/build.docker.local.sh

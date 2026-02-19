@@ -19,18 +19,18 @@ logger: Logger = logging.getLogger(__name__)
 
 def _handle_2fa(api: PyiCloudService) -> None:
     # fmt: off
-    print("\nTwo-factor (2FA) authentication required.")
+    print("\ntwo-factor (2FA) authentication required.")
     # fmt: on
     code = input("\nPlease enter verification code: ")
     if not api.validate_2fa_code(code):
-        logger.debug("Failed to verify (2FA) verification code")
+        logger.debug("failed to verify (2FA) verification code")
         sys.exit(constants.ExitCode.EXIT_FAILED_VERIFY_2FA_CODE.value)
 
 def _handle_2sa(api: PyiCloudService) -> None:
     # fmt: off
-    print("\nTwo-step (2SA) authentication required.")
+    print("\ntwo-step (2SA) authentication required.")
     # fmt: on
-    print("\nYour trusted devices are:")
+    print("\nyour trusted devices are:")
     devices: list[dict[str, Any]] = api.trusted_devices
     device: Any = None
     while device is None:
@@ -39,20 +39,20 @@ def _handle_2sa(api: PyiCloudService) -> None:
             name = device.get("deviceName", f"SMS to {phone}")
             print(f"{i}: {name}")
 
-        device_index = int(input("\nWhich device number would you like to use: "))
+        device_index = int(input("\nwhich device number would you like to use: "))
         device = devices.get(device_index, None)
         if device is None:
-            print("Invalid device chosen, please retry")
+            print("invalid device chosen, please retry")
         else:
             break
 
     if not api.send_verification_code(device):
-        logger.debug("Failed to send verification code")
+        logger.debug("failed to send verification code")
         sys.exit(constants.ExitCode.EXIT_FAILED_SEND_2SA_CODE.value)
 
     code = input("\nPlease enter two-step (2SA) validation code: ")
     if not api.validate_verification_code(device, code):
-        print("Failed to verify verification code")
+        print("failed to verify verification code")
         sys.exit(constants.ExitCode.EXIT_FAILED_VERIFY_2FA_CODE.value)
 
 
@@ -65,7 +65,7 @@ def authenticate(
     unverified_https: bool=False
 ) -> PyiCloudService:
     """Authenticate with iCloud username and password"""
-    logger.debug("Authenticating...")
+    logger.debug("authenticating")
     failure_count = 0
 
     while True:
@@ -87,7 +87,7 @@ def authenticate(
                     raise PyiCloud2SARequiredException(username)
                 _handle_2sa(api)
             # Auth success
-            logger.debug("Authenticated as %s", username)
+            logger.debug("authenticated as %s", username)
             return api
 
         except PyiCloudFailedLoginException as e:
@@ -101,13 +101,13 @@ def authenticate(
 
         except PyiCloudNoStoredPasswordAvailableException as e:
             if raise_authorization_exception:
-                message = f"No stored password available for {username} and not a TTY!"
+                message = f"no stored password available for {username} and not a TTY!"
                 raise PyiCloudFailedLoginException(message) from e
 
             # Prompt for password if not stored in PyiCloud's keyring
-            password = click.prompt("iCloud Password", hide_input=True)
+            password = click.prompt("iCloud password", hide_input=True)
             if (
                 not utils.password_exists_in_keyring(username)
-                and click.confirm("Save password in keyring?")
+                and click.confirm("save password in keyring?")
             ):
                 utils.store_password_in_keyring(username, password)

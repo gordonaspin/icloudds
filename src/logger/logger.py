@@ -41,7 +41,7 @@ def setup_logging(logging_config: Path) -> Path:
         with open(logging_config, encoding="utf-8") as f_in:
             config: dict[str, Any] = json.load(f_in)
     except FileNotFoundError:
-        print(f"Logging config file {logging_config} not found")
+        print(f"logging config file {logging_config} not found")
         sys.exit(constants.ExitCode.EXIT_FAILED_CLICK_USAGE.value)
 
     folder_path: Path = Path()
@@ -78,7 +78,7 @@ def handle_unhandled_exception(exc_type: Type[BaseException],
     # Log the exception with the traceback
     # Using logger.exception() is a shortcut that automatically adds exc_info
     logger: Logger = logging.getLogger("unhandled")
-    logger.critical("**** unhandled exception occurred ****",
+    logger.critical("unhandled exception occurred",
                     exc_info=(exc_type, exc_value, exc_traceback))
 
 def handle_thread_exception(args: Any) -> None:
@@ -86,7 +86,7 @@ def handle_thread_exception(args: Any) -> None:
     Custom exception hook to handle uncaught exceptions in threads.
     """
     logger: Logger = logging.getLogger("unhandled")
-    logger.critical("**** exception in thread: %s ****",
+    logger.critical("exception in thread: %s",
                     args.thread.name,
                     exc_info=(args.exc_type, args.exc_value, args.exc_traceback))
 

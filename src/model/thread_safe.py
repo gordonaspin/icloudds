@@ -155,7 +155,7 @@ class ThreadSafePathList(UserList):
                 try:
                     return self.data[self.data.index(target)]
                 except ValueError as e:
-                    raise KeyError(f"Path {index} not found in list.") from e
+                    raise KeyError(f"path {index} not found in list.") from e
             return super().__getitem__(index)
 
     def __setitem__(self, index: int, item: Any) -> None:
@@ -171,7 +171,7 @@ class ThreadSafePathList(UserList):
                 try:
                     self.data.remove(target)
                 except ValueError as e:
-                    raise KeyError(f"Path {index} not found in list.") from e
+                    raise KeyError(f"path {index} not found in list.") from e
             else:
                 super().__delitem__(index)
 

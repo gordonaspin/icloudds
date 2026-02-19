@@ -5,6 +5,7 @@ Checks sanity of command line parameters
 Creates instance of timeloop at global scope, so we can remove its logger later
 """
 import os
+import platform
 import sys
 import logging
 from datetime import timedelta
@@ -125,6 +126,12 @@ def main(directory: str,
     """
     main
     """
+    if platform.system() == "Darwin":
+        try:
+            click.confirm("Running on MacOS is not recommended, continue ?", abort=True)
+        except click.exceptions.Abort:
+            sys.exit(constants.ExitCode.EXIT_NORMAL.value)
+
     log_path = setup_logging(logging_config=Path(logging_config))
     logger.info("%s %s", NAME, importlib.metadata.version(NAME))
     if password is not None:
@@ -185,7 +192,7 @@ def main(directory: str,
                 lock_file.unlink()
             sys.exit(constants.ExitCode.EXIT_NORMAL.value)
     else:
-        print(f"Another instance of icloudds is running. Check for {lock_file} file")
+        print(f"another instance of icloudds is running, check for {lock_file} file")
         sys.exit(constants.ExitCode.EXIT_FAILED_ALREADY_RUNNING.value)
 
     return constants.ExitCode.EXIT_NORMAL.value

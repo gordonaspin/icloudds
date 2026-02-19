@@ -159,7 +159,7 @@ class EventHandler(FileSystemEventHandler):
         """
         main processing loop for event handling
         """
-        # we do not want this to end ... catch any exception and sleep
+        # we do not want this to end, catch any exception and sleep
         # for a minute. Network errors are most likely and they should
         # be transient.
         while True:
@@ -201,7 +201,7 @@ class EventHandler(FileSystemEventHandler):
                     self._refresh_icloud)
                 self._timeloop.start()
 
-                logger.info("waiting for events to happen...")
+                logger.info("waiting for events")
                 while True:
                     # Collect FS events until empty for a period to debouce events
                     self._collect_events_until_empty(
@@ -248,8 +248,8 @@ class EventHandler(FileSystemEventHandler):
                                     "icloud refresh discarded due to pending futures or events")
                             self._refresh: ICloudTree = None
             except Exception as e:
-                logger.debug("caught exception %e in EventHandler.run()", e)
-                logger.debug("sleeping for a minute...")
+                logger.debug("exception %e in EventHandler.run()", e)
+                logger.debug("sleeping for a minute")
                 sleep(60)
 
 
@@ -273,7 +273,7 @@ class EventHandler(FileSystemEventHandler):
 
             with self._refresh_lock, self._pending_futures:
                 # We have the locks
-                logger.debug("refreshing iCloud...")
+                logger.debug("refreshing iCloud")
                 refresh: ICloudTree = ICloudTree(ctx=self.ctx)
                 start = datetime.now()
                 if refresh.refresh():
@@ -298,7 +298,7 @@ class EventHandler(FileSystemEventHandler):
             return
         self._icloud_dirty: bool = self._icloud.is_dirty()
         if self._icloud_dirty:
-            logger.info("iCloud Drive changes detected...")
+            logger.info("iCloud Drive changes detected")
             self._refresh_icloud(force=True)
 
     def _collect_events_until_empty(self,
@@ -344,7 +344,7 @@ class EventHandler(FileSystemEventHandler):
         if not event_collector:
             return
         events: list[QueuedEvent] = self._coalesce_events(event_collector)
-        logger.debug("dispatching %d coalesced events...", len(events))
+        logger.debug("dispatching %d coalesced events", len(events))
         for qe in events:
             event: ICDSSystemEvent = qe.event
             logger.debug("%s dispatching event: %s", name, event)
@@ -361,7 +361,7 @@ class EventHandler(FileSystemEventHandler):
         """
         if not self._pending_futures:
             return
-        logger.debug("Processing %d pending futures...", len(self._pending_futures))
+        logger.debug("processing %d pending futures", len(self._pending_futures))
         for _ in set(self._pending_futures):
             done, self._pending_futures = as_completed(
                 self._pending_futures), ThreadSafeSet()
@@ -381,7 +381,7 @@ class EventHandler(FileSystemEventHandler):
         if result is None:
             return
         if not result.success:
-            logger.error("%s %s", result, result.exception)
+            logger.error("exception %s in %s", result.exception, result)
             if result.fn is not None:
                 retry = result.args[-1]
                 if retry > 0:
@@ -511,8 +511,8 @@ class EventHandler(FileSystemEventHandler):
         """
         Sync files from iCloud Drive to Local or from Refresh to Local.
         """
-        left: str = "Local" if isinstance(these, LocalTree) else "iCloud"
-        right: str = "Refresh" if left == "iCloud" else "iCloud"
+        left: str = "local" if isinstance(these, LocalTree) else "iCloud"
+        right: str = "refresh" if left == "iCloud" else "iCloud"
         downloaded_count: int = 0
         folder_created_count: int = 0
         for path in those.keys() - these.keys():
@@ -523,11 +523,11 @@ class EventHandler(FileSystemEventHandler):
             self._suppressed_paths.add(path)
             if isinstance(cfi, ICloudFolderInfo):
                 if not self.ctx.directory.joinpath(path).exists():
-                    logger.debug("%s %s is missing locally, creating folders...", right, path)
+                    logger.debug("%s %s is missing locally, creating folders", right, path)
                     self.ctx.directory.joinpath(path).mkdir(parents=True, exist_ok=True)
                     folder_created_count += 1
             else:
-                logger.debug("%s %s is missing locally, downloading to Local...", right, path)
+                logger.debug("%s %s is missing locally, downloading to local", right, path)
                 self._pending_futures.add(self._unlimited_threadpool.submit(
                     self._icloud.download, path, cfi, self._local.add))
                 downloaded_count += 1
@@ -538,8 +538,8 @@ class EventHandler(FileSystemEventHandler):
         """
         Sync files common to both trees, resolving differences based on modified time.        
         """
-        left: str = "Local" if isinstance(these, LocalTree) else "iCloud"
-        right: str = "Refresh" if left == "iCloud" else "iCloud"
+        left: str = "local" if isinstance(these, LocalTree) else "iCloud"
+        right: str = "refresh" if left == "iCloud" else "iCloud"
         downloaded_count: int = 0
         uploaded_count: int = 0
         for path in set(these.files()) & set(those.files()):
@@ -553,19 +553,19 @@ class EventHandler(FileSystemEventHandler):
                 # upload if the left file instance is newer and is a local file
                 # ignore if left is an iCloudFileInfo (the refresh missed an update)
                 if left_fi.modified_time > right_fi.modified_time:
-                    logger.debug("%s is newer for %s, uploading to iCloud Drive...", left, path)
+                    logger.debug("%s is newer for %s, uploading to iCloud Drive", left, path)
                     self._handle_file_modified(
                         ICDSFileModifiedEvent(src_path=path))
                     uploaded_count += 1
                 elif left_fi.modified_time < right_fi.modified_time:
-                    logger.debug("%s is newer for %s, downloading to Local...", right, path)
+                    logger.debug("%s is newer for %s, downloading to local", right, path)
                     self._suppressed_paths.add(path)
                     self._pending_futures.add(self._unlimited_threadpool.submit(
                         those.download, path, right_fi, self._local.add))
                     downloaded_count += 1
             else:
                 if left_fi.size != right_fi.size:
-                    logger.debug("Different size in both: %s %s: %s | %s: %s",
+                    logger.debug("different size in both: %s %s: %s | %s: %s",
                              path, left, left_fi, right, right_fi)
         return (uploaded_count, downloaded_count)
 
@@ -643,7 +643,7 @@ class EventHandler(FileSystemEventHandler):
         """
         lfi: LocalFileInfo = self._local.add(path=event.src_path)
         if lfi is None:
-            logger.warning("Local file %s disappeared after file modified", event.src_path)
+            logger.warning("local file %s disappeared after file modified", event.src_path)
             return
 
         parent_path: Path = event.src_path.parent
@@ -652,25 +652,25 @@ class EventHandler(FileSystemEventHandler):
 
         if cfi is not None:
             if (lfi.modified_time > cfi.modified_time) and lfi.size > 0:
-                logger.debug("Local file %s modified/created, iCloud Drive file is outdated",
+                logger.debug("local file %s modified/created, iCloud Drive file is outdated",
                              event.src_path)
             else:
                 if (lfi.modified_time > cfi.modified_time) and lfi.size == 0:
-                    logger.debug("local file %s is newer, but has size 0, skipping upload...",
+                    logger.debug("local file %s is newer, but has size 0, skipping upload",
                                  event.src_path)
                 else:
-                    logger.debug("iCloud Drive file %s is up to date, skipping upload...",
+                    logger.debug("iCloud Drive file %s is up to date, skipping upload",
                                  event.src_path)
                 return
 
         if parent is None:
-            logger.debug("local file %s modified/created, creating folders for %s...",
+            logger.debug("local file %s modified/created, creating folders for %s",
                          event.src_path, parent_path)
             self._handle_folder_created(event=ICDSFolderCreatedEvent(src_path=parent_path))
 
         cfi = self._icloud.get(event.src_path, None)
         if cfi is None or (lfi.modified_time > cfi.modified_time) and lfi.size > 0:
-            logger.debug("local file %s modified/created, uploading to iCloud Drive...",
+            logger.debug("local file %s modified/created, uploading to iCloud Drive",
                             event.src_path)
             self._pending_futures.add(
                 self._limited_threadpool.submit(
@@ -779,7 +779,7 @@ class EventHandler(FileSystemEventHandler):
             self._pending_futures.add(self._limited_threadpool.submit(
                 self._icloud.create_icloud_folders, event.src_path))
         else:
-            logger.debug("iCloud Drive folder %s already exists, skipping creation...",
+            logger.debug("iCloud Drive folder %s already exists, skipping creation",
                          event.src_path)
 
     def _handle_folder_modified(self, _event: ICDSFolderModifiedEvent) -> None:

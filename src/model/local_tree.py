@@ -85,7 +85,7 @@ class LocalTree(BaseTree):
     @override
     def refresh(self) -> None:
         """Refresh the local file system tree by scanning the root directory."""
-        logger.debug("refreshing Local Drive %s...", self._root_path)
+        logger.debug("refreshing local %s", self._root_path)
         self._root.clear()
         self._root[BaseTree.ROOT_FOLDER_NAME] = LocalFolderInfo(
             BaseTree.ROOT_FOLDER_NAME)
