@@ -110,7 +110,7 @@ CONTEXT_SETTINGS: dict = {"help_option_names": ["-h", "--help"], "max_content_wi
               show_default=True)
 @version_option(version=importlib.metadata.version(NAME))
 
-# pylint: disable=too-many-branches
+# pylint: disable=too-many-branches, too-many-statements
 def main(directory: str,
          username: str,
          password: str,
