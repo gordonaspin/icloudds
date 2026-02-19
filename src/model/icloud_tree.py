@@ -181,14 +181,14 @@ class ICloudTree(BaseTree):
                      "root count %d, %d folders, %d files",
                      len(self._root),
                      self._root_count(),
-                     sum(1 for _ in self.folders(self._root)),
-                     sum(1 for _ in self.files(self._root)))
+                     sum(1 for _ in self.folders(root=True)),
+                     sum(1 for _ in self.files(root=True)))
         logger.debug("refresh iCloud Drive complete trash has %d items, "
                      "trash count %d, %d folders, %d files",
                      len(self._trash),
                      self._trash_count(),
-                     sum(1 for _ in self.folders(self._trash)),
-                     sum(1 for _ in self.files(self._trash)))
+                     sum(1 for _ in self.folders(root=False)),
+                     sum(1 for _ in self.files(root=False)))
         self._remove_ignored_items()
         return succeeded
 

@@ -185,7 +185,7 @@ class BaseTree():
 
         return True
 
-    def files(self, root: bool=True) -> Iterator[Path]:
+    def files(self, root: bool) -> Iterator[Path]:
         """
         Breadth-first iteration over all files.
         Yields: (pathname, name, item)
@@ -195,7 +195,7 @@ class BaseTree():
             if isinstance(cfi, FileInfo):
                 yield path
 
-    def folders(self, root: bool=True) -> Iterator[Path]:
+    def folders(self, root: bool) -> Iterator[Path]:
         """
         Breadth-first iteration over all folders.
         Yields: (pathname, name, item)

@@ -542,7 +542,7 @@ class EventHandler(FileSystemEventHandler):
         right: str = "refresh" if left == "iCloud" else "iCloud"
         downloaded_count: int = 0
         uploaded_count: int = 0
-        for path in set(these.files()) & set(those.files()):
+        for path in set(these.files(root=True)) & set(those.files(root=True)):
             path = Path(path)
             left_fi: ICloudFileInfo = these.get(path)
             right_fi: ICloudFileInfo = those.get(path)

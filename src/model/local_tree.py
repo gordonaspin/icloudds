@@ -93,8 +93,8 @@ class LocalTree(BaseTree):
         self._remove_ignored_items()
         logger.debug("refresh local complete root has %d items, %d folders, %d files",
                      len(self._root),
-                     sum(1 for _ in self.folders(self._root)),
-                     sum(1 for _ in self.files(self._root)))
+                     sum(1 for _ in self.folders(root=True)),
+                     sum(1 for _ in self.files(root=True)))
 
     @override
     def add(self,
