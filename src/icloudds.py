@@ -13,6 +13,7 @@ import traceback
 import importlib.metadata
 import tempfile
 from pathlib import Path
+
 import click
 from click import version_option
 from watchdog.observers import Observer
@@ -22,6 +23,7 @@ from fasteners import InterProcessLock
 import constants
 from context import Context
 from event.event_handler import EventHandler
+from event.icloud_event import TimedEvent
 from logger.logger import setup_logging, KeywordFilter, Logger
 
 NAME: str = "icloudds"
@@ -164,7 +166,8 @@ def main(directory: str,
                             icloud_refresh_period=timedelta(seconds=icloud_refresh_period),
                             debounce_period=timedelta(seconds=debounce_period),
                             max_workers=max_workers,
-                            timeloop=timeloop)
+                            timeloop=timeloop,
+                            jobs_disabled=TimedEvent(constants.NETWORK_RETRY_SECONDS))
 
             if context.ignore_regexes:
                 for p in context.ignore_regexes:

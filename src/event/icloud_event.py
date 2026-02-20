@@ -4,6 +4,8 @@ Define QueuedEvent wrapper class in order to time-sort coalesced events
 """
 from pathlib import Path
 from dataclasses import dataclass
+from threading import Event
+from datetime import datetime, timedelta
 
 from watchdog.events import (
     FileSystemEvent,
@@ -16,6 +18,21 @@ from watchdog.events import (
     DirMovedEvent,
     DirDeletedEvent,
 )
+
+class TimedEvent(Event):
+    """TimedEvent track when an event was set"""
+    def __init__(self, seconds: int=0) -> TimedEvent:
+        super().__init__()
+        self._expiration_dt: datetime = datetime.now() + timedelta(seconds=seconds)
+
+    def expired(self) -> bool:
+        """return true if expired"""
+        return datetime.now() > self._expiration_dt
+
+    def time_to_live(self) -> int:
+        """return the number of seconds to live"""
+        return (self._expiration_dt - datetime.now()).total_seconds()
+
 
 class ICDSSystemEvent():
     """

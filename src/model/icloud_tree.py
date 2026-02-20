@@ -118,17 +118,22 @@ class ICloudTree(BaseTree):
         """
         if self._is_authenticated:
             return
-        api: PyiCloudService = authenticate(
-            username=self.ctx.username,
-            password=self.ctx.password,
-            cookie_directory=self.ctx.cookie_directory,
-            raise_authorization_exception=False,
-            client_id=None,
-            unverified_https=True
-            )
-        self.drive: DriveService = api.drive
-        self._is_authenticated: bool = True
-        logger.debug("iCloud Drive is %s@%s", self.ctx.username, self.drive.service_root)
+        try:
+            api: PyiCloudService = authenticate(
+                username=self.ctx.username,
+                password=self.ctx.password,
+                cookie_directory=self.ctx.cookie_directory,
+                raise_authorization_exception=False,
+                client_id=None,
+                unverified_https=True
+                )
+            self.drive: DriveService = api.drive
+            self._is_authenticated: bool = True
+            logger.debug("iCloud Drive is %s@%s", self.ctx.username, self.drive.service_root)
+        except PyiCloudFailedLoginException as e:
+            logger.debug("exception is authenticate %s", e)
+            self._handle_drive_exception(e)
+
     @override
     def refresh(self) -> None:
         """
@@ -490,6 +495,9 @@ class ICloudTree(BaseTree):
 
     def is_dirty(self) -> bool:
         """returns True if icloud has changes, else False"""
+        if not self._is_authenticated:
+            return False
+
         try:
             # it is possible that self._root or self._trash is empty but
             # don't want to lock as trash_has_changed() is a lengthy operation
@@ -497,6 +505,7 @@ class ICloudTree(BaseTree):
                 return True
         except Exception as e:
             logger.warning("exception in is_dirty() %s", e)
+            self._handle_drive_exception(e)
 
         return False
 
@@ -518,6 +527,7 @@ class ICloudTree(BaseTree):
         """
         Check if the iCloud Drive root folder has changed by comparing file counts.
         Returns True if the root folder has changed, False otherwise."""
+
         pre_count: int = 0
         post_count: int = 0
         try:
@@ -528,6 +538,7 @@ class ICloudTree(BaseTree):
             self.drive.root.data['fileCount'] = post_count
         except Exception as e:
             logger.warning("exception in _root_has_changed: %s", e)
+            self._handle_drive_exception(e)
             return False
         return pre_count != post_count
 
@@ -545,6 +556,7 @@ class ICloudTree(BaseTree):
             self.drive.trash.data['numberOfItems'] = post_count
         except Exception as e:
             logger.warning("exception in _trash_has_changed: %s", e)
+            self._handle_drive_exception(e)
             return False
         return pre_count != post_count
 
@@ -555,9 +567,12 @@ class ICloudTree(BaseTree):
         Clears authentication state on API failures to force re-authentication."""
         match e:
             case PyiCloudAPIResponseException() | PyiCloudFailedLoginException():
-                logger.warning("PyiCloud exception: %s %s", e.__class__.__name__, e)
+                logger.warning("PyiCloud exception: %s %s code: %d",
+                               e.__class__.__name__, e, e.code)
                 logger.warning(traceback.format_exc())
                 self._is_authenticated: bool = False
+                logger.info("pausing jobs")
+                self.ctx.jobs_disabled.set()
             case MismatchException():
                 logger.debug("exception in refresh: %s", e)
             case _:

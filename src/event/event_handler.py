@@ -10,7 +10,7 @@ from typing import Type, Callable
 from threading import Lock
 from time import time, sleep, monotonic
 import shutil
-from datetime import datetime
+from datetime import datetime, timedelta
 from queue import Queue, Empty
 from concurrent.futures import ThreadPoolExecutor, Future, as_completed
 
@@ -60,7 +60,8 @@ from event.icloud_event import (
     ICDSFolderCreatedEvent,
     ICDSFolderModifiedEvent,
     ICDSFolderMovedEvent,
-    ICDSFolderDeletedEvent)
+    ICDSFolderDeletedEvent,
+    TimedEvent)
 from event.icloud_event import QueuedEvent
 
 logger: Logger = logging.getLogger(__name__)
@@ -154,6 +155,10 @@ class EventHandler(FileSystemEventHandler):
             ICDSFolderDeletedEvent: self._handle_folder_deleted,
             ICloudFolderModifiedEvent: self._handle_icloud_folder_modified
         }
+        # Register periodic jobs
+        self._timeloop.job(interval=self.ctx.icloud_check_period)(self._is_icloud_dirty)
+        self._timeloop.job(interval=self.ctx.icloud_refresh_period)(self._refresh_icloud)
+        self._timeloop.job(interval=timedelta(seconds=5))(self._nanny)
 
     def run(self) -> None:
         """
@@ -174,33 +179,18 @@ class EventHandler(FileSystemEventHandler):
                     uploaded, icloud_folders_created = self._sync_local_to_icloud()
                     downloaded, local_folders_created = self._sync_icloud(self._local, self._icloud)
                     updated_up, updated_down = self._sync_common(self._local, self._icloud)
-                    uploaded += updated_up
-                    downloaded += updated_down
                     local_files_deleted, local_folders_deleted = self._delete_icloud_trash_items()
+
                     logger.info("initial sync complete")
                     if any((uploaded, downloaded, local_files_deleted,
                         local_folders_deleted, local_folders_created, icloud_folders_created)):
-                        logger.info("icloud refresh applied, "
-                                    "%d uploaded, "
-                                    "%d downloaded, "
-                                    "%d local files deleted, "
-                                    "%d local folders deleted, "
-                                    "%d local folders created, "
-                                    "%d iCloud folders created",
-                            uploaded,
-                            downloaded,
-                            local_files_deleted,
-                            local_folders_deleted,
-                            local_folders_created,
-                            icloud_folders_created)
+                        logger.info("icloud refresh applied, %d uploaded, %d downloaded, "
+                            "%d local files deleted, %d local folders deleted, "
+                            "%d local folders created, %d iCloud folders created",
+                            uploaded + updated_up, downloaded + updated_down, local_files_deleted,
+                            local_folders_deleted, local_folders_created, icloud_folders_created)
 
-                # Register periodic jobs and start timeloop
-                self._timeloop.job(interval=self.ctx.icloud_check_period)(
-                    self._is_icloud_dirty)
-                self._timeloop.job(interval=self.ctx.icloud_refresh_period)(
-                    self._refresh_icloud)
                 self._timeloop.start()
-
                 logger.info("waiting for events")
                 while True:
                     # Collect FS events until empty for a period to debouce events
@@ -248,58 +238,66 @@ class EventHandler(FileSystemEventHandler):
                                     "icloud refresh discarded due to pending futures or events")
                             self._refresh: ICloudTree = None
             except Exception as e:
-                logger.debug("exception %e in EventHandler.run()", e)
-                logger.debug("sleeping for a minute")
-                sleep(60)
+                logger.debug("exception %s in EventHandler.run()", e)
+                self.ctx.jobs_disabled.set()
 
+    def _nanny(self):
+        """runs periodically"""
+        if self.ctx.jobs_disabled.is_set():
+            if not self.ctx.jobs_disabled.expired():
+                logger.info("jobs will restart in %.2f", self.ctx.jobs_disabled.time_to_live())
+            else:
+                self.ctx.jobs_disabled.clear()
 
     def _refresh_icloud(self, force: bool=False) -> None:
         """
         Called by timeloop periodically to refresh iCloud Drive tree if the refresh
         period has elapsed. Does not run if a forced refresh was recently performed.
         """
-        if self._refresh_is_running:
-            return
-        if (not force
-            and (datetime.now() - self._latest_refresh_time) < self.ctx.icloud_refresh_period):
-            logger.debug("skipping icloud refresh, period not elapsed")
-        else:
-            while self._pending_futures.unsafe_len() or self._event_queue.qsize() > 0:
-                logger.debug(
-                    "icloud refresh waiting on %d pending futures and %d events to quiesce",
-                    self._pending_futures.unsafe_len(),
-                    self._event_queue.qsize())
-                sleep(self.ctx.debounce_period.total_seconds()+5)
-
-            with self._refresh_lock, self._pending_futures:
-                # We have the locks
-                logger.debug("refreshing iCloud")
-                refresh: ICloudTree = ICloudTree(ctx=self.ctx)
-                start = datetime.now()
-                if refresh.refresh():
+        if not self.ctx.jobs_disabled.is_set() and not self._refresh_is_running:
+            if (not force
+                and (datetime.now() - self._latest_refresh_time) < self.ctx.icloud_refresh_period):
+                logger.debug("skipping icloud refresh, period not elapsed")
+            else:
+                while self._pending_futures.unsafe_len() or self._event_queue.qsize() > 0:
                     logger.debug(
-                        "refresh took %.2fs and is consistent",
-                        (datetime.now() - start).total_seconds())
-                    self._refresh: ICloudTree = refresh
-                    self._icloud_dirty: bool = False
-                else:
-                    logger.warning(
-                        "refresh took %.2fs but is inconsistent",
-                        (datetime.now() - start).total_seconds())
-                self._latest_refresh_time: datetime = datetime.now()
-        self._refresh_is_running: bool = False
+                        "icloud refresh waiting on %d pending futures and %d events to quiesce",
+                        self._pending_futures.unsafe_len(),
+                        self._event_queue.qsize())
+                    sleep(self.ctx.debounce_period.total_seconds()+5)
+
+                with self._refresh_lock, self._pending_futures:
+                    # We have the locks
+                    logger.debug("refreshing iCloud")
+                    refresh: ICloudTree = ICloudTree(ctx=self.ctx)
+                    start = datetime.now()
+                    if refresh.refresh():
+                        logger.debug(
+                            "refresh took %.2fs and is consistent",
+                            (datetime.now() - start).total_seconds())
+                        self._refresh: ICloudTree = refresh
+                        self._icloud_dirty: bool = False
+                    else:
+                        logger.warning(
+                            "refresh took %.2fs but is inconsistent",
+                            (datetime.now() - start).total_seconds())
+                    self._latest_refresh_time: datetime = datetime.now()
+            self._refresh_is_running: bool = False
 
     def _is_icloud_dirty(self) -> None:
         """
         Called by timeloop periodically to check if iCloud Drive has changed since the last refresh.
         Calls _refresh_icloud if changes are detected.
         """
-        if self._icloud_dirty or len(self._pending_futures) > 0 or self._event_queue.qsize() > 0:
-            return
-        self._icloud_dirty: bool = self._icloud.is_dirty()
-        if self._icloud_dirty:
-            logger.info("iCloud Drive changes detected")
-            self._refresh_icloud(force=True)
+        if not self.ctx.jobs_disabled.is_set():
+            if (self._icloud_dirty
+                or len(self._pending_futures) > 0
+                or self._event_queue.qsize()) > 0:
+                return
+            self._icloud_dirty: bool = self._icloud.is_dirty()
+            if self._icloud_dirty:
+                logger.info("iCloud Drive changes detected")
+                self._refresh_icloud(force=True)
 
     def _collect_events_until_empty(self,
                                     events: list[QueuedEvent],
@@ -434,21 +432,11 @@ class EventHandler(FileSystemEventHandler):
 
         if any((uploaded, downloaded, files_deleted, folders_deleted,
                 folders_created, files_renamed, folders_renamed)):
-            logger.info("icloud refresh applied, "
-                        "%d uploaded, "
-                        "%d downloaded, "
-                        "%d local files deleted, "
-                        "%d local folders deleted, "
-                        "%d local folders created, "
-                        "%d local files renamed, "
-                        "%d local folders renamed",
-                        uploaded,
-                        downloaded,
-                        files_deleted,
-                        folders_deleted,
-                        folders_created,
-                        files_renamed,
-                        folders_renamed)
+            logger.info("icloud refresh applied, %d uploaded, %d downloaded, "
+                "%d local files deleted, %d local folders deleted, "
+                "%d local folders created, %d local files renamed, %d local folders renamed",
+                uploaded, downloaded, files_deleted, folders_deleted,
+                folders_created, files_renamed, folders_renamed)
         else:
             logger.info("icloud refresh, no changes")
 
@@ -552,12 +540,12 @@ class EventHandler(FileSystemEventHandler):
                              path, left, left_fi, right, right_fi)
                 # upload if the left file instance is newer and is a local file
                 # ignore if left is an iCloudFileInfo (the refresh missed an update)
-                if left_fi.modified_time > right_fi.modified_time:
+                if (left_fi.modified_time > right_fi.modified_time) and left_fi.size > 0:
                     logger.debug("%s is newer for %s, uploading to iCloud Drive", left, path)
                     self._handle_file_modified(
                         ICDSFileModifiedEvent(src_path=path))
                     uploaded_count += 1
-                elif left_fi.modified_time < right_fi.modified_time:
+                elif (left_fi.modified_time < right_fi.modified_time) and right_fi.size > 0:
                     logger.debug("%s is newer for %s, downloading to local", right, path)
                     self._suppressed_paths.add(path)
                     self._pending_futures.add(self._unlimited_threadpool.submit(

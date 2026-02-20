@@ -5,6 +5,8 @@ from pathlib import Path
 from dataclasses import dataclass
 from datetime import timedelta
 
+from event.icloud_event import TimedEvent
+
 @dataclass
 class Context:
     """
@@ -23,3 +25,4 @@ class Context:
     debounce_period: timedelta
     max_workers: int
     timeloop: any
+    jobs_disabled: TimedEvent
