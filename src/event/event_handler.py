@@ -244,9 +244,8 @@ class EventHandler(FileSystemEventHandler):
     def _nanny(self):
         """runs periodically"""
         if self.ctx.jobs_disabled.is_set():
-            if not self.ctx.jobs_disabled.expired():
-                logger.info("jobs will restart in %.2f", self.ctx.jobs_disabled.time_to_live())
-            else:
+            if self.ctx.jobs_disabled.expired():
+                logger.info("restarting iCloud Drive background tasks")
                 self.ctx.jobs_disabled.clear()
 
     def _refresh_icloud(self, force: bool=False) -> None:
