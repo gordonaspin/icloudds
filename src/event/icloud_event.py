@@ -23,7 +23,8 @@ class TimedEvent(Event):
     """TimedEvent track when an event was set"""
     def __init__(self, seconds: int=0) -> TimedEvent:
         super().__init__()
-        self._expiration_dt: datetime = datetime.now() + timedelta(seconds=seconds)
+        self._expiration_dt: datetime = datetime.now()
+        self._timedelta = timedelta(seconds=seconds)
 
     def expired(self) -> bool:
         """return true if expired"""
@@ -32,6 +33,11 @@ class TimedEvent(Event):
     def time_to_live(self) -> int:
         """return the number of seconds to live"""
         return (self._expiration_dt - datetime.now()).total_seconds()
+
+    def set(self):
+        self._expiration_dt: datetime = datetime.now() + self._timedelta
+        super().set()
+
 
 
 class ICDSSystemEvent():

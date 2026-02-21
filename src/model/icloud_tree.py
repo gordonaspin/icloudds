@@ -566,15 +566,24 @@ class ICloudTree(BaseTree):
         Categorizes exceptions and logs appropriate messages.
         Clears authentication state on API failures to force re-authentication."""
         match e:
-            case PyiCloudAPIResponseException() | PyiCloudFailedLoginException():
-                logger.warning("PyiCloud exception: %s %s code: %d",
+            case MismatchException():
+                logger.debug("exception in refresh: %s", e)
+            case PyiCloudAPIResponseException():
+                logger.warning("exception PyiCloudAPIResponseException: %s %s code: %s",
                                e.__class__.__name__, e, e.code)
                 logger.warning(traceback.format_exc())
                 self._is_authenticated: bool = False
                 logger.info("pausing jobs")
                 self.ctx.jobs_disabled.set()
-            case MismatchException():
-                logger.debug("exception in refresh: %s", e)
+            case PyiCloudFailedLoginException():
+                logger.warning("exception PyiCloudFailedLoginException: %s %s",
+                               e.__class__.__name__, e)
+                logger.warning(traceback.format_exc())
+                self._is_authenticated: bool = False
+                logger.info("pausing jobs")
+                self.ctx.jobs_disabled.set()
             case _:
                 logger.error("unhandled exception in ICloudTree: %s %s", e.__class__.__name__, e)
                 logger.error(traceback.format_exc())
+                logger.info("pausing jobs")
+                self.ctx.jobs_disabled.set()
