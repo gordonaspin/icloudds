@@ -437,7 +437,7 @@ class EventHandler(FileSystemEventHandler):
                 uploaded, downloaded, files_deleted, folders_deleted,
                 folders_created, files_renamed, folders_renamed)
         else:
-            logger.info("icloud refresh, no changes")
+            logger.debug("icloud refresh, no changes")
 
     def _apply_renames(self, these: ICloudTree, those: ICloudTree) -> tuple[int, int]:
         """
