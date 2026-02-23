@@ -13,8 +13,10 @@ RUN cp /usr/share/zoneinfo/$TZ /etc/localtime
 # Work in tmp, pull the repo and build it here
 WORKDIR /tmp
 ARG CACHE_BUST
-RUN git clone https://github.com/gordonaspin/icloudds.git
-WORKDIR /tmp/icloudds
+ARG PROJECT
+ARG REPO
+RUN git clone ${REPO}
+WORKDIR /tmp/${PROJECT}
 RUN python -m build
 
 # Install the wheel, check commands work
@@ -34,11 +36,11 @@ RUN addgroup -g ${GROUP_GID} -S ${GROUP_NAME} && \
 
 # docker home, copy base config files and chown them to docker
 WORKDIR /home/docker
-RUN cp /tmp/icloudds/.*.txt .
-RUN cp /tmp/icloudds/logging-config.json .
+RUN cp /tmp/${PROJECT}/.*.txt .
+RUN cp /tmp/${PROJECT}/logging-config.json .
 RUN chown -R docker:docker *
 RUN chown -R docker:docker .*
-RUN rm -rf /tmp/icloudds
+RUN rm -rf /tmp/${PROJECT}
 
 # Set the TZ, change user to docker, define entrypoint
 ENV TZ=${TZ}

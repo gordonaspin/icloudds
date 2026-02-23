@@ -1,21 +1,24 @@
 #!/bin/bash
 set -euo pipefail
 
-REPO="gordonaspin"
+OWNER=gordonaspin
 PROJECT=$(basename $(pwd))
-ICLOUDDS_VERSION="$(cat pyproject.toml | grep version | cut -d'"' -f 2)"
-REMOTE_HASH=$(git ls-remote https://github.com/${REPO}/${PROJECT}.git HEAD | awk '{ print $1 }')
-echo "Repo: ${REPO}"
+REPO=https://github.com/${OWNER}/${PROJECT}.git
+VERSION="$(cat pyproject.toml | grep version | cut -d'"' -f 2)"
+REMOTE_HASH=$(git ls-remote ${REPO} HEAD | awk '{ print $1 }')
+echo "Repo: ${OWNER}"
 echo "Project: ${PROJECT}"
-echo "Current ${PROJECT} version: ${ICLOUDDS_VERSION}"
+echo "Current ${PROJECT} version: ${VERSION}"
 echo "Git remote hash: ${REMOTE_HASH}"
 
 docker build \
   --build-arg CACHE_BUST=${REMOTE_HASH} \
+  --build-arg PROJECT=${PROJECT} \
+  --build-arg REPO=${REPO} \
   --progress plain \
-  -t "${REPO}/${PROJECT}:${ICLOUDDS_VERSION}" \
+  -t "${OWNER}/${PROJECT}:${VERSION}" \
   -f "Dockerfile" \
   .
 
-docker tag "${REPO}/${PROJECT}:${ICLOUDDS_VERSION}" "${REPO}/${PROJECT}:latest"
-docker push -a ${REPO}/${PROJECT}
+docker tag "${OWNER}/${PROJECT}:${VERSION}" "${OWNER}/${PROJECT}:latest"
+docker push -a ${OWNER}/${PROJECT}
