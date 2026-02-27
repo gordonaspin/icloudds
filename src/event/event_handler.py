@@ -177,19 +177,19 @@ class EventHandler(FileSystemEventHandler):
                 logger.info("scan iCloud Drive %s", self._icloud.document_root)
                 if self._icloud.refresh():
                     self._dump_state(local=self._local, icloud=self._icloud)
-                    uploaded, icloud_folders_created = self._sync_local_to_icloud()
-                    downloaded, local_folders_created = self._sync_icloud(self._local, self._icloud)
-                    updated_up, updated_down = self._sync_common(self._local, self._icloud)
-                    local_files_deleted, local_folders_deleted = self._delete_icloud_trash_items()
+                    uploads, icloud_folders_creates = self._sync_local_to_icloud()
+                    downloads, local_folders_creates = self._sync_icloud(self._local, self._icloud)
+                    updates_up, updates_down = self._sync_common(self._local, self._icloud)
+                    local_file_deletes, local_folder_deletes = self._delete_icloud_trash_items()
 
                     logger.info("initial sync complete")
-                    if any((uploaded, downloaded, local_files_deleted,
-                        local_folders_deleted, local_folders_created, icloud_folders_created)):
-                        logger.info("icloud refresh applied, %d uploaded, %d downloaded, "
-                            "%d local files deleted, %d local folders deleted, "
-                            "%d local folders created, %d iCloud folders created",
-                            uploaded + updated_up, downloaded + updated_down, local_files_deleted,
-                            local_folders_deleted, local_folders_created, icloud_folders_created)
+                    if any((uploads, downloads, local_file_deletes,
+                        local_folder_deletes, local_folders_creates, icloud_folders_creates)):
+                        logger.info("icloud refresh applied, %d uploads, %d downloads, "
+                            "%d local file deletes, %d local folder deletes, "
+                            "%d local folder creates, %d iCloud folder creates",
+                            uploads + updates_up, downloads + updates_down, local_file_deletes,
+                            local_folder_deletes, local_folders_creates, icloud_folders_creates)
 
                 self._timeloop.start()
                 logger.info("waiting for events")
@@ -411,33 +411,33 @@ class EventHandler(FileSystemEventHandler):
         """
         Apply the queued iCloud refresh to the local tree.
         """
-        uploaded: int = 0
-        downloaded: int = 0
-        files_deleted: int = 0
-        folders_deleted: int = 0
-        folders_created: int = 0
-        files_renamed: int = 0
-        folders_renamed: int = 0
-        updated_downloaded: int = 0
+        uploads: int = 0
+        downloads: int = 0
+        file_deletes: int = 0
+        folder_deletes: int = 0
+        folder_creates: int = 0
+        file_renames: int = 0
+        folder_renames: int = 0
+        update_downloads: int = 0
 
-        files_renamed, folders_renamed = self._apply_renames(self._icloud, self._refresh)
-        downloaded, folders_created = self._sync_icloud(self._icloud, self._refresh)
-        uploaded, updated_downloaded = self._sync_common(self._icloud, self._refresh)
-        downloaded += updated_downloaded
-        deleted_paths = self._icloud.keys() - self._refresh.keys()
+        file_renames, folder_renames = self._apply_renames(self._icloud, self._refresh)
+        downloads, folder_creates = self._sync_icloud(self._icloud, self._refresh)
+        uploads, update_downloads = self._sync_common(self._icloud, self._refresh)
+        downloads += update_downloads
+        path_deletes = self._icloud.keys() - self._refresh.keys()
 
-        for path in deleted_paths:
+        for path in path_deletes:
             _files, _folders = self._delete_local(Path(path))
-            files_deleted += _files
-            folders_deleted += _folders
+            file_deletes += _files
+            folder_deletes += _folders
 
-        if any((uploaded, downloaded, files_deleted, folders_deleted,
-                folders_created, files_renamed, folders_renamed)):
-            logger.info("icloud refresh applied, %d uploaded, %d downloaded, "
-                "%d local files deleted, %d local folders deleted, "
-                "%d local folders created, %d local files renamed, %d local folders renamed",
-                uploaded, downloaded, files_deleted, folders_deleted,
-                folders_created, files_renamed, folders_renamed)
+        if any((uploads, downloads, file_deletes, folder_deletes,
+                folder_creates, file_renames, folder_renames)):
+            logger.info("icloud refresh applied, %d uploades, %d downloads, "
+                "%d local file deletes, %d local folder deletes, "
+                "%d local folder creates, %d local file renames, %d local folder renames",
+                uploads, downloads, file_deletes, folder_deletes,
+                folder_creates, file_renames, folder_renames)
         else:
             logger.debug("icloud refresh, no changes")
 
