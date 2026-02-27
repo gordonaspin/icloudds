@@ -162,15 +162,15 @@ $ pip install dist/*.whl
 $ python icloudds.py -h
 ```
 or, if you build and install the wheel from the dist/ folder
-```bash
-$ icloudds -h          
-Usage: icloudds <options>
+```
+$ icloudds -h
+Usage: icloudds.py -d <directory> -u <apple-id> [options]
 
-  main
+  Synchronize a local folder with your iCloud Drive
 
 Options:
-  -d, --directory <directory>     Local directory that should be used for download
-  -u, --username <username>       Your iCloud username or email address
+  -d, --directory <directory>     Local directory that should be used for download  [required]
+  -u, --username <username>       Your iCloud username or email address  [required]
   -p, --password <password>       Your iCloud password (default: use pyicloud keyring or prompt for password)
   --cookie-directory <directory>  Directory to store cookies for authentication  [default: ~/.pyicloud]
   --ignore-regexes <filename>     Ignore regular expressions  [default: .ignore-regexes.txt]

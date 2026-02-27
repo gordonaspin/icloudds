@@ -47,11 +47,10 @@ def load_regexes(name: str) -> list[str] | None:
 
         return lines if lines else None
 
-CONTEXT_SETTINGS: dict = {"help_option_names": ["-h", "--help"], "max_content_width": 120}
-@click.command(help=NAME,
-               context_settings=CONTEXT_SETTINGS,
-               options_metavar="-d <directory> -u <apple-id> [options]",
-               no_args_is_help=True)
+@click.command(
+        context_settings={"help_option_names": ["-h", "--help"], "max_content_width": 120},
+        options_metavar="-d <directory> -u <apple-id> [options]",
+        no_args_is_help=True)
 @click.option("-d", "--directory",
               required=True,
               help="Local directory that should be used for download",
@@ -111,6 +110,7 @@ CONTEXT_SETTINGS: dict = {"help_option_names": ["-h", "--help"], "max_content_wi
               default=os.cpu_count(),
               show_default=True)
 @version_option(version=importlib.metadata.version(NAME))
+#@version_option()
 
 # pylint: disable=too-many-branches, too-many-statements
 def main(directory: str,
@@ -126,7 +126,7 @@ def main(directory: str,
          max_workers: int
          ) -> int:
     """
-    main
+    Synchronize a local folder with your iCloud Drive
     """
     if platform.system() == "Darwin":
         try:

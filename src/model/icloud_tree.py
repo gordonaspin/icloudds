@@ -178,7 +178,12 @@ class ICloudTree(BaseTree):
                 raise MismatchException(f"mismatch root_count: {self._root_count()} "
                                         f"!= root_files_count: {root_files_count} +"
                                         f" trash_files_count: {trash_files_count}")
+        except MismatchException:
+            # expect from time to time, normal behaviour
+            logger.debug("Mismatch exception")
+            succeeded = False
         except Exception as e:
+            logger.warning("caught exception %s in refresh()", e)
             self._handle_drive_exception(e)
             succeeded = False
 
@@ -566,12 +571,11 @@ class ICloudTree(BaseTree):
         Categorizes exceptions and logs appropriate messages.
         Clears authentication state on API failures to force re-authentication."""
         match e:
-            case MismatchException():
-                logger.debug("exception in refresh: %s", e)
             case PyiCloudAPIResponseException():
                 logger.warning("exception PyiCloudAPIResponseException: %s %s code: %s",
                                e.__class__.__name__, e, e.code)
-                logger.warning(traceback.format_exc())
+                if e.code is not None and e.code in [503,]:
+                    logger.warning(traceback.format_exc())
                 self._is_authenticated: bool = False
                 logger.info("pausing jobs")
                 self.ctx.jobs_disabled.set()
@@ -585,5 +589,6 @@ class ICloudTree(BaseTree):
             case _:
                 logger.error("unhandled exception in ICloudTree: %s %s", e.__class__.__name__, e)
                 logger.error(traceback.format_exc())
+                self._is_authenticated: bool = False
                 logger.info("pausing jobs")
                 self.ctx.jobs_disabled.set()
