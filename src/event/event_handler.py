@@ -8,6 +8,7 @@ import logging
 from logging import Logger
 from typing import Type, Callable
 from threading import Lock
+import traceback
 from time import time, sleep, monotonic
 import shutil
 from datetime import datetime, timedelta
@@ -239,6 +240,7 @@ class EventHandler(FileSystemEventHandler):
                             self._refresh: ICloudTree = None
             except Exception as e:
                 logger.debug("exception %s in EventHandler.run()", e)
+                logger.warning(traceback.format_exc())
                 self.ctx.jobs_disabled.set()
 
     def _nanny(self):
@@ -583,7 +585,18 @@ class EventHandler(FileSystemEventHandler):
         for name in self._icloud.keys(root=False):
             if name == BaseTree.ROOT_FOLDER_NAME:
                 continue
-            path = Path(self._icloud.get(name, root=False).node.data.get("restorePath"))
+            try:
+                cfi = self._icloud.get(name, root=False)
+                restore_path = cfi.node.data.get("restorePath", None)
+                if restore_path is None:
+                    # con't delete a file if we don't know where it was
+                    continue
+            # pylint: disable=bare-except
+            except:
+                # con't delete a file if the node has no restore_path
+                continue
+
+            path = Path(restore_path)
             if path:
                 self._suppressed_paths.add(path)
                 _files, _folders = self._delete_local(path)
