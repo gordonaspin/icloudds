@@ -239,7 +239,7 @@ class EventHandler(FileSystemEventHandler):
                                     "icloud refresh discarded due to pending futures or events")
                             self._refresh: ICloudTree = None
             except Exception as e:
-                logger.debug("exception %s in EventHandler.run()", e)
+                logger.critical("exception %s in EventHandler.run()", e)
                 logger.warning(traceback.format_exc())
                 self.ctx.jobs_disabled.set()
 

@@ -131,7 +131,7 @@ class ICloudTree(BaseTree):
             self._is_authenticated: bool = True
             logger.debug("iCloud Drive is %s@%s", self.ctx.username, self.drive.service_root)
         except PyiCloudFailedLoginException as e:
-            logger.debug("exception is authenticate %s", e)
+            logger.error("exception is authenticate %s", e)
             self._handle_drive_exception(e)
 
     @override
@@ -180,7 +180,7 @@ class ICloudTree(BaseTree):
                                         f" trash_files_count: {trash_files_count}")
         except MismatchException:
             # expect from time to time, normal behaviour
-            logger.debug("Mismatch exception")
+            logger.info("Mismatch exception")
             succeeded = False
         except Exception as e:
             logger.warning("caught exception %s in refresh()", e)
@@ -572,7 +572,7 @@ class ICloudTree(BaseTree):
         Clears authentication state on API failures to force re-authentication."""
         match e:
             case PyiCloudAPIResponseException():
-                logger.warning("exception PyiCloudAPIResponseException: %s %s code: %s",
+                logger.error("exception PyiCloudAPIResponseException: %s %s code: %s",
                                e.__class__.__name__, e, e.code)
                 if e.code is not None and e.code in [503,]:
                     logger.warning(traceback.format_exc())
@@ -580,14 +580,14 @@ class ICloudTree(BaseTree):
                 logger.info("pausing jobs")
                 self.ctx.jobs_disabled.set()
             case PyiCloudFailedLoginException():
-                logger.warning("exception PyiCloudFailedLoginException: %s %s",
+                logger.error("exception PyiCloudFailedLoginException: %s %s",
                                e.__class__.__name__, e)
                 logger.warning(traceback.format_exc())
                 self._is_authenticated: bool = False
                 logger.info("pausing jobs")
                 self.ctx.jobs_disabled.set()
             case _:
-                logger.error("unhandled exception in ICloudTree: %s %s", e.__class__.__name__, e)
+                logger.critical("unhandled exception in ICloudTree: %s %s", e.__class__.__name__, e)
                 logger.error(traceback.format_exc())
                 self._is_authenticated: bool = False
                 logger.info("pausing jobs")
