@@ -26,7 +26,7 @@ class BaseInfo:
         iCloud Drive stores files using UTC and rounds seconds up
         to the nearest second on Linux and down on Darwin.
         """
-        if platform.system() == "Linux":
+        if platform.system() in ["Linux", "Windows"]:
             if dt.microsecond >= 500000:
                 dt += timedelta(seconds=1)
             return dt.replace(microsecond=0)
