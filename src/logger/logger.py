@@ -54,7 +54,7 @@ def setup_logging(logging_config: Path) -> Path:
     try:
         logging.config.dictConfig(config)
     except (PermissionError, ValueError) as e:
-        print(f"Error in creating/writing to {file}, is the path writable ?")
+        print(f"Error {e} in creating/writing to {file}, is the path writable ?")
         sys.exit(constants.ExitCode.EXIT_FAILED_CLICK_USAGE.value)
 
     queue_handler: Handler = logging.getHandlerByName("queue_handler")
