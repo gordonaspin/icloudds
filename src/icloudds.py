@@ -128,12 +128,6 @@ def main(directory: str,
     """
     Synchronize a local folder with your iCloud Drive
     """
-    if platform.system() == "Darwin":
-        try:
-            click.confirm("Running on MacOS is not recommended, continue ?", abort=True)
-        except click.exceptions.Abort:
-            sys.exit(constants.ExitCode.EXIT_NORMAL.value)
-
     log_path = setup_logging(logging_config=Path(logging_config))
     logger.info("%s %s", NAME, importlib.metadata.version(NAME))
     if password is not None:
