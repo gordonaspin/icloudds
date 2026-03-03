@@ -5,7 +5,6 @@ Checks sanity of command line parameters
 Creates instance of timeloop at global scope, so we can remove its logger later
 """
 import os
-import platform
 import sys
 import logging
 from datetime import timedelta
