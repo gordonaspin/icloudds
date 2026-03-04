@@ -537,17 +537,19 @@ class EventHandler(FileSystemEventHandler):
             right_fi: ICloudFileInfo = those.get(path)
 
             if left_fi.modified_time != right_fi.modified_time:
-                logger.debug("different time in both: %s %s: %s | %s: %s",
+                logger.debug("different time in both: %s fi:%s: %s | %s: fi:%s",
                              path, left, left_fi, right, right_fi)
                 # upload if the left file instance is newer and is a local file
                 # ignore if left is an iCloudFileInfo (the refresh missed an update)
                 if (left_fi.modified_time > right_fi.modified_time) and left_fi.size > 0:
-                    logger.debug("%s is newer for %s, uploading to iCloud Drive", left, path)
+                    logger.debug("%s fi:%s is newer for %s fi:%s, uploading to iCloud Drive",
+                                 left, left_fi, path, right_fi)
                     self._handle_file_modified(
                         ICDSFileModifiedEvent(src_path=path))
                     uploaded_count += 1
                 elif (left_fi.modified_time < right_fi.modified_time) and right_fi.size > 0:
-                    logger.debug("%s is newer for %s, downloading to local", right, path)
+                    logger.debug("%s fi:%s is newer for %s, fi:%s downloading to local",
+                                 right, right_fi, path, left_fi)
                     self._suppressed_paths.add(path)
                     self._pending_futures.add(self._unlimited_threadpool.submit(
                         those.download, path, right_fi, self._local.add))
@@ -652,15 +654,18 @@ class EventHandler(FileSystemEventHandler):
 
         if cfi is not None:
             if (lfi.modified_time > cfi.modified_time) and lfi.size > 0:
-                logger.debug("local file %s modified/created, iCloud Drive file is outdated",
-                             event.src_path)
+                logger.debug("local file %s lfi:%s modified/created, "
+                             "icloud file cfi:%s is outdated",
+                             event.src_path, lfi, cfi)
             else:
                 if (lfi.modified_time > cfi.modified_time) and lfi.size == 0:
-                    logger.debug("local file %s is newer, but has size 0, skipping upload",
-                                 event.src_path)
+                    logger.debug("local file %s lfi:%s is newer than cfi:%s,"
+                                 " but has size 0, skipping upload",
+                                 event.src_path, lfi, cfi)
                 else:
-                    logger.debug("iCloud Drive file %s is up to date, skipping upload",
-                                 event.src_path)
+                    logger.debug("local lfi:%s icloud file %s cfi:%s is up to date,"
+                                 " skipping upload",
+                                 lfi, event.src_path, cfi)
                 return
 
         if parent is None:
@@ -670,8 +675,8 @@ class EventHandler(FileSystemEventHandler):
 
         cfi = self._icloud.get(event.src_path, None)
         if cfi is None or (lfi.modified_time > cfi.modified_time) and lfi.size > 0:
-            logger.debug("local file %s modified/created, uploading to iCloud Drive",
-                            event.src_path)
+            logger.debug("local file %s lfi:%s cfi:%s modified/created, uploading to iCloud Drive",
+                            event.src_path, lfi, cfi)
             self._pending_futures.add(
                 self._limited_threadpool.submit(
                     self._icloud.upload,

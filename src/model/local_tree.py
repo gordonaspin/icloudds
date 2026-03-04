@@ -137,16 +137,17 @@ class LocalTree(BaseTree):
                             logger.debug("local ignore folder %s", path)
                             self._add_children(entry.path)
                         else:
-                            logger.debug("local add folder %s", path)
-                            self.add(path=path, _obj=LocalFolderInfo(name=entry.name))
+                            lfi = LocalFolderInfo(name=entry.name)
+                            self.add(path=path, _obj=lfi)
+                            logger.debug("local add folder %s %s", path, lfi)
                             self._add_children(entry.path)
                     elif entry.is_file(follow_symlinks=True):
                         if self.ignore(path):
                             logger.debug("local ignore file %s", path)
                             continue
+                        lfi = LocalFileInfo(name=entry.name, stat_entry=stat_entry)
+                        self.add(path=path, _obj=lfi)
                         logger.debug("local add folder %s", path)
-                        self.add(path=path, _obj=LocalFileInfo(
-                            name=entry.name, stat_entry=stat_entry))
 
         except PermissionError:
             pass  # Skip unreadable directories

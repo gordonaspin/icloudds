@@ -250,10 +250,11 @@ class ICloudTree(BaseTree):
                 continue
 
             if child.type == "folder":
-                self.add(path=child_path, _obj=ICloudFolderInfo(child), _root=root)
-                logger.debug("iCloud Drive %s add folder %s",
+                cfi = ICloudFolderInfo(child)
+                self.add(path=child_path, _obj=cfi, _root=root)
+                logger.debug("icloud %s add folder %s %s",
                              "root" if root else "trash",
-                              child_path)
+                              child_path, cfi)
                 if recursive:
                     if executor is not None:
                         future: Future = executor.submit(
@@ -272,12 +273,13 @@ class ICloudTree(BaseTree):
                             ignore=ignore,
                             executor=executor)
             elif child.type == "file":
-                self.add(path=child_path, _obj=ICloudFileInfo(child), _root=root)
-                logger.debug("iCloud Drive %s add file %s",
+                cfi = ICloudFileInfo(child)
+                self.add(path=child_path, _obj=cfi, _root=root)
+                logger.debug("icloud %s add file %s %s",
                              "root" if root else "trash",
-                              child_path)
+                              child_path, cfi)
             else:
-                logger.debug("iCloud Drive %s did not process %s %s",
+                logger.debug("icloud %s did not process %s %s",
                              "root" if root else "trash",
                              child.type,
                              path.joinpath(child.name))
