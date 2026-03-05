@@ -111,13 +111,13 @@ class ICloudTree(BaseTree):
             self.authenticate()
         return self.drive.service_root
 
-    def authenticate(self) -> None:
+    def authenticate(self) -> bool:
         """
         Authenticate with iCloud using provided credentials.
         Caches the authentication state to avoid redundant logins.
         """
         if self._is_authenticated:
-            return
+            return True
         try:
             api: PyiCloudService = authenticate(
                 username=self.ctx.username,
@@ -130,12 +130,15 @@ class ICloudTree(BaseTree):
             self.drive: DriveService = api.drive
             self._is_authenticated: bool = True
             logger.info("iCloud Drive is %s@%s", self.ctx.username, self.drive.service_root)
+            return True
         except PyiCloudFailedLoginException as e:
-            logger.error("exception is authenticate %s", e)
+            logger.error("exception in authenticate %s", e)
             self._handle_drive_exception(e)
 
+        return False
+
     @override
-    def refresh(self) -> None:
+    def refresh(self) -> bool:
         """
         Refresh the iCloud Drive tree structure.
         Traverses the entire iCloud Drive hierarchy to update the tree.
@@ -144,7 +147,9 @@ class ICloudTree(BaseTree):
         Validates the tree by checking file counts."""
         succeeded: bool = True
         try:
-            self.authenticate()
+            if not self.authenticate():
+                logger.error("unable to authenticate, will retry later")
+                return False
             self._root.clear()
             self._trash.clear()
             self._root[BaseTree.ROOT_FOLDER_NAME] = ICloudFolderInfo(node=self.drive.root)
