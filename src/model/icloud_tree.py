@@ -129,7 +129,7 @@ class ICloudTree(BaseTree):
                 )
             self.drive: DriveService = api.drive
             self._is_authenticated: bool = True
-            logger.debug("iCloud Drive is %s@%s", self.ctx.username, self.drive.service_root)
+            logger.info("iCloud Drive is %s@%s", self.ctx.username, self.drive.service_root)
         except PyiCloudFailedLoginException as e:
             logger.error("exception is authenticate %s", e)
             self._handle_drive_exception(e)
