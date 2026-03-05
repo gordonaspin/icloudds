@@ -1,3 +1,4 @@
+#pylint: disable=too-many-lines
 """Event handling module for iCloud directory synchronization.
 
 This module provides the EventHandler class which monitors file system events
@@ -7,7 +8,7 @@ from pathlib import Path
 import logging
 from logging import Logger
 from typing import Type, Callable
-from threading import Lock
+from threading import Lock, current_thread
 import traceback
 from time import time, sleep, monotonic
 import shutil
@@ -141,8 +142,10 @@ class EventHandler(FileSystemEventHandler):
         self._refresh_queue: Queue = Queue()
         self._suppressed_paths: ThreadSafeSet = ThreadSafeSet()
         self._limited_threadpool: ThreadPoolExecutor = ThreadPoolExecutor(
+            thread_name_prefix='limited',
             max_workers=1)
         self._unlimited_threadpool: ThreadPoolExecutor = ThreadPoolExecutor(
+            thread_name_prefix='unlimited',
             max_workers=ctx.max_workers)
         self._pending_futures: ThreadSafeSet = ThreadSafeSet()
         self._event_table: dict[ICDSSystemEvent, Callable] = {
@@ -168,13 +171,13 @@ class EventHandler(FileSystemEventHandler):
         # we do not want this to end, catch any exception and sleep
         # for a minute. Network errors are most likely and they should
         # be transient.
+        current_thread().name = "event_handler"
+
         while True:
             try:
                 event_collector: list[QueuedEvent] = []
                 # Initial refresh of local and iCloud trees, perform initial sync
-                logger.info("scan local %s", self._local.document_root)
                 self._local.refresh()
-                logger.info("scan iCloud Drive %s", self._icloud.document_root)
                 if self._icloud.refresh():
                     self._dump_state(local=self._local, icloud=self._icloud)
                     uploads, icloud_folders_creates = self._sync_local_to_icloud()
@@ -245,6 +248,8 @@ class EventHandler(FileSystemEventHandler):
 
     def _nanny(self):
         """runs periodically"""
+        current_thread().name = "nanny"
+
         if self.ctx.jobs_disabled.is_set():
             if self.ctx.jobs_disabled.expired():
                 logger.info("restarting iCloud Drive background tasks")
@@ -255,6 +260,8 @@ class EventHandler(FileSystemEventHandler):
         Called by timeloop periodically to refresh iCloud Drive tree if the refresh
         period has elapsed. Does not run if a forced refresh was recently performed.
         """
+        current_thread().name = "refresh_icloud"
+
         if not self.ctx.jobs_disabled.is_set() and not self._refresh_is_running:
             if (not force
                 and (datetime.now() - self._latest_refresh_time) < self.ctx.icloud_refresh_period):
@@ -290,6 +297,8 @@ class EventHandler(FileSystemEventHandler):
         Called by timeloop periodically to check if iCloud Drive has changed since the last refresh.
         Calls _refresh_icloud if changes are detected.
         """
+        current_thread().name = "dirty"
+
         if not self.ctx.jobs_disabled.is_set():
             if (self._icloud_dirty
                 or len(self._pending_futures) > 0

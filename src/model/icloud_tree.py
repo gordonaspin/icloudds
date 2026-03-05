@@ -95,12 +95,15 @@ class ICloudTree(BaseTree):
     - Supports concurrent processing of folders and file operations
     - Thread-safe folder traversal during refresh operations
     """
+    first_time = True
+
     def __init__(self, ctx: Context) -> ICloudTree:
         self.drive: DriveService = None
         self._is_authenticated: bool = False
         self.ctx: Context = ctx
         self._threadpool: ThreadPoolExecutor = ThreadPoolExecutor(
-            max((os.cpu_count() or 1) * 4, constants.DOWNLOAD_WORKERS))
+            thread_name_prefix='refresh',
+            max_workers=max((os.cpu_count() or 1) * 4, constants.DOWNLOAD_WORKERS))
         super().__init__(ctx)
 
     @override
@@ -129,7 +132,9 @@ class ICloudTree(BaseTree):
                 )
             self.drive: DriveService = api.drive
             self._is_authenticated: bool = True
-            logger.info("iCloud Drive is %s@%s", self.ctx.username, self.drive.service_root)
+            if ICloudTree.first_time:
+                logger.info("iCloud Drive is %s@%s", self.ctx.username, self.drive.service_root)
+                ICloudTree.first_time = False
             return True
         except PyiCloudFailedLoginException as e:
             logger.error("exception in authenticate %s", e)
