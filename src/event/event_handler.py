@@ -442,7 +442,7 @@ class EventHandler(FileSystemEventHandler):
 
         if any((uploads, downloads, file_deletes, folder_deletes,
                 folder_creates, file_renames, folder_renames)):
-            logger.info("icloud refresh applied, %d uploades, %d downloads, "
+            logger.info("icloud refresh applied, %d uploads, %d downloads, "
                 "%d local file deletes, %d local folder deletes, "
                 "%d local folder creates, %d local file renames, %d local folder renames",
                 uploads, downloads, file_deletes, folder_deletes,
