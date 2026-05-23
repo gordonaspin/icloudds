@@ -22,7 +22,7 @@ RUN python -m build
 # Install the wheel, check commands work
 RUN pip install dist/*.whl
 RUN pip list -v
-RUN icloud -h
+RUN icloud --help
 RUN icloudds -h
 
 # Add the docker user

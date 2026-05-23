@@ -1,6 +1,6 @@
 click==8.3.1
-#pyicloud @ git+https://github.com/timlaing/pyicloud.git@673c1aa30572bac2849be099b5d5d10cf78c1613
-pyicloud @ git+https://github.com/gordonaspin/pyicloud.git
+pyicloud @ git+https://github.com/timlaing/pyicloud.git
+pyicloud[cli]
 watchdog==6.0.0
 timeloop-ng==1.0.0
 fasteners==0.20

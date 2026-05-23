@@ -18,13 +18,56 @@ import constants
 logger: Logger = logging.getLogger(__name__)
 
 def _handle_2fa(api: PyiCloudService) -> None:
-    # fmt: off
-    print("\ntwo-factor (2FA) authentication required.")
-    # fmt: on
-    code = input("\nPlease enter verification code: ")
-    if not api.validate_2fa_code(code):
-        logger.debug("failed to verify (2FA) verification code")
-        sys.exit(constants.ExitCode.EXIT_FAILED_VERIFY_2FA_CODE.value)
+    security_key_names = api.security_key_names
+
+    if security_key_names:
+        print(
+            f"Security key confirmation is required. "
+            f"Please plug in one of the following keys: {', '.join(security_key_names)}"
+        )
+
+        devices = api.fido2_devices
+
+        print("Available FIDO2 devices:")
+
+        for idx, dev in enumerate(devices, start=1):
+            print(f"{idx}: {dev}")
+
+        choice = click.prompt(
+            "Select a FIDO2 device by number",
+            type=click.IntRange(1, len(devices)),
+            default=1,
+        )
+        selected_device = devices[choice - 1]
+
+        print("Please confirm the action using the security key")
+
+        api.confirm_security_key(selected_device)
+
+    else:
+        print("Two-factor authentication required.")
+        api.request_2fa_code()
+        code = input(
+            "Enter the code you received of one of your approved devices: "
+        )
+        result = api.validate_2fa_code(code)
+        print("Code validation result: %s" % result)
+
+        if not result:
+            print("Failed to verify security code")
+            sys.exit(1)
+
+    if not api.is_trusted_session:
+        print("Session is not trusted. Requesting trust...")
+        result = api.trust_session()
+        print("Session trust result %s" % result)
+
+        if not result:
+            print(
+                "Failed to request trust. You will likely be prompted for confirmation again in the coming weeks"
+            )
+
+    return
 
 def _handle_2sa(api: PyiCloudService) -> None:
     # fmt: off
