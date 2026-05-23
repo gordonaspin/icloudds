@@ -51,7 +51,7 @@ def _handle_2fa(api: PyiCloudService) -> None:
             "Enter the code you received of one of your approved devices: "
         )
         result = api.validate_2fa_code(code)
-        print("Code validation result: %s" % result)
+        print(f"Code validation result: {result}")
 
         if not result:
             print("Failed to verify security code")
@@ -60,14 +60,13 @@ def _handle_2fa(api: PyiCloudService) -> None:
     if not api.is_trusted_session:
         print("Session is not trusted. Requesting trust...")
         result = api.trust_session()
-        print("Session trust result %s" % result)
+        print(f"Session trust result {result}")
 
         if not result:
             print(
-                "Failed to request trust. You will likely be prompted for confirmation again in the coming weeks"
+                "Failed to request trust. You will likely be prompted"
+                 " for confirmation again in the coming weeks"
             )
-
-    return
 
 def _handle_2sa(api: PyiCloudService) -> None:
     # fmt: off
