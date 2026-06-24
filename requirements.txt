@@ -1,4 +1,4 @@
-click==8.3.1
+click
 pyicloud @ git+https://github.com/timlaing/pyicloud.git
 pyicloud[cli]
 watchdog==6.0.0
