@@ -52,63 +52,72 @@
       "handlers": [
         "stderr",
         "file"
-      ]
+      ],
+      "propagate": false
     },
     "icloudds": {
       "level": "DEBUG",
       "handlers": [
         "stderr",
         "file"
-      ]
+      ],
+      "propagate": false
     },
     "timeloop": {
       "level": "WARNING",
       "handlers": [
         "stderr",
         "file"
-      ]
+      ],
+      "propagate": false
     },
     "icloud": {
       "level": "INFO",
       "handlers": [
         "stderr",
         "file"
-      ]
+      ],
+      "propagate": false
     },
     "model": {
       "level": "DEBUG",
       "handlers": [
         "stderr",
         "file"
-      ]
+      ],
+      "propagate": false
     },
     "event": {
       "level": "DEBUG",
       "handlers": [
         "stderr",
         "file"
-      ]
+      ],
+      "propagate": false
     },
     "pyicloud": {
       "level": "CRITICAL",
       "handlers": [
         "stderr",
         "file"
-      ]
+      ],
+      "propagate": false
     },
     "keyring": {
       "level": "CRITICAL",
       "handlers": [
         "stderr",
         "file"
-      ]
+      ],
+      "propagate": false
     },
     "urllib3": {
       "level": "CRITICAL",
       "handlers": [
         "stderr",
         "file"
-      ]
+      ],
+      "propagate": false
     }
   }
 }
